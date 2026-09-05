@@ -12,6 +12,16 @@ type Store struct{ clickhouse driver.Conn }
 
 func NewStore(clickhouse driver.Conn) *Store { return &Store{clickhouse: clickhouse} }
 
+// nullable converts optional values to a nil interface or a concrete value.
+// Passing a typed nil *uuid.UUID through interface{} makes clickhouse-go call
+// UUID.Value() on the nil receiver and panic instead of writing SQL NULL.
+func nullable[T any](value *T) any {
+	if value == nil {
+		return nil
+	}
+	return *value
+}
+
 func (s *Store) Insert(ctx context.Context, projection Projection) error {
 	if projection.Delivery != nil {
 		fact := projection.Delivery
@@ -20,8 +30,8 @@ func (s *Store) Insert(ctx context.Context, projection Projection) error {
 			(event_id, event_type, order_id, delivery_id, courier_id, status, latitude, longitude,
 			 predicted_eta_seconds, actual_eta_seconds, occurred_at, correlation_id, trace_id, payload_json)
 			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			uuid.MustParse(fact.EventID), fact.EventType, fact.OrderID, fact.DeliveryID, fact.CourierID,
-			fact.Status, fact.Latitude, fact.Longitude, fact.PredictedETASeconds, fact.ActualETASeconds,
+			uuid.MustParse(fact.EventID), fact.EventType, nullable(fact.OrderID), nullable(fact.DeliveryID), nullable(fact.CourierID),
+			fact.Status, nullable(fact.Latitude), nullable(fact.Longitude), nullable(fact.PredictedETASeconds), nullable(fact.ActualETASeconds),
 			fact.OccurredAt, fact.CorrelationID, fact.TraceID, string(fact.Payload)); err != nil {
 			return fmt.Errorf("insert delivery event: %w", err)
 		}
@@ -36,7 +46,7 @@ func (s *Store) Insert(ctx context.Context, projection Projection) error {
 			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			uuid.MustParse(fact.EventID), uuid.MustParse(fact.OrderID), fact.EventType, fact.Status,
 			fact.PreviousStatus, fact.TotalAmountMinor, fact.Currency, fact.ProductIDs, fact.ProductNames,
-			fact.ItemQuantities, fact.PredictedETASeconds, fact.ActualETASeconds, fact.OccurredAt,
+			fact.ItemQuantities, nullable(fact.PredictedETASeconds), nullable(fact.ActualETASeconds), fact.OccurredAt,
 			fact.CorrelationID, fact.TraceID); err != nil {
 			return fmt.Errorf("insert order analytic: %w", err)
 		}
