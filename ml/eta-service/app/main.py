@@ -119,7 +119,10 @@ async def validation_error(request: Request, error: RequestValidationError):
     return JSONResponse(status_code=422, content={"error": {
         "code": "validation_failed",
         "message": "request validation failed",
-        "details": error.errors(include_url=False, include_input=False),
+        # FastAPI's RequestValidationError exposes a no-argument errors()
+        # method (unlike Pydantic's ValidationError). Keep the shared API
+        # envelope working with the pinned FastAPI release.
+        "details": error.errors(),
         "correlation_id": getattr(request.state, "correlation_id", ""),
     }})
 

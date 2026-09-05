@@ -142,8 +142,11 @@ func (c *EventConsumer) handle(ctx context.Context, value []byte) error {
 }
 
 func validTransition(current, target string) bool {
-	allowed := map[string]string{
-		"created": "confirmed", "confirmed": "assembling", "assembling": "delivering", "delivering": "delivered",
+	allowed := map[string]map[string]bool{
+		"created":    {"confirmed": true},
+		"confirmed":  {"assembling": true, "delivered": true}, // operator completion is an explicit fast-forward.
+		"assembling": {"delivering": true, "delivered": true},
+		"delivering": {"delivered": true},
 	}
-	return allowed[current] == target
+	return allowed[current][target]
 }

@@ -18,6 +18,7 @@
       <nav class="nav" aria-label="Основная навигация">
         <a href="#catalog" data-nav="catalog">Каталог</a>
         <a href="#order" data-nav="order">Заказ</a>
+        <a href="#operations" data-nav="operations">Операции</a>
         <a href="#analytics" data-nav="analytics">Аналитика</a>
       </nav>
       <div class="topbar-actions">
@@ -94,6 +95,20 @@
           </div>
           <div class="notice hidden" id="analytics-notice" role="status"></div>
           <div id="analytics-content"></div>
+        </div>
+      </section>
+
+      <section class="view hidden" id="operations-view" data-view="operations" aria-labelledby="operations-title">
+        <div class="page-shell">
+          <div class="page-heading">
+            <div>
+              <span class="eyebrow dark">Dispatch console</span>
+              <h1 id="operations-title">Операции доставки</h1>
+            </div>
+            <button class="quiet-button" id="refresh-operations" type="button">Обновить</button>
+          </div>
+          <div class="notice hidden" id="operations-notice" role="status"></div>
+          <div id="operations-content"></div>
         </div>
       </section>
     </main>

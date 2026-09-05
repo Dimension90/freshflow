@@ -167,6 +167,20 @@ button:focus-visible, a:focus-visible { outline: 3px solid #79a91c; outline-offs
 .status-table { margin-top: 1rem; }
 .status-table > div { align-items: center; font-size: .85rem; }
 .status-dot { display: inline-block; width: 8px; height: 8px; margin-right: .5rem; border-radius: 50%; background: var(--lime-dark); }
+.operations-card { padding: 1.4rem; border: 1px solid var(--line); border-radius: 20px; background: var(--surface); }
+.courier-list { display: grid; margin-top: 1.2rem; border-top: 1px solid var(--line); }
+.courier-row { display: grid; grid-template-columns: 44px 1fr auto minmax(190px, auto); gap: .85rem; align-items: center; padding: 1rem 0; border-bottom: 1px solid var(--line); }
+.courier-avatar { display: grid; place-items: center; width: 38px; height: 38px; border-radius: 50%; color: white; background: var(--night); font-weight: 850; }
+.courier-copy { display: grid; gap: .25rem; }
+.courier-copy span, .operation-actions > span { color: var(--muted); font-size: .78rem; }
+.courier-status { padding: .3rem .55rem; border-radius: 999px; background: #eff8dc; color: var(--lime-dark); font-size: .7rem; font-weight: 850; }
+.courier-status.assigned { color: #8a5b00; background: #fff1cb; }
+.operation-actions { display: flex; justify-content: flex-end; gap: .45rem; align-items: center; }
+.operation-actions button { padding: .48rem .62rem; border: 1px solid var(--line); border-radius: 8px; color: var(--ink); background: white; font: inherit; font-size: .74rem; font-weight: 800; cursor: pointer; }
+.operation-actions button:hover:not(:disabled) { border-color: var(--lime-dark); }
+.operation-actions button:disabled { opacity: .55; cursor: wait; }
+.operation-actions .complete-operation { color: white; border-color: var(--night); background: var(--night); }
+.operations-help { margin: 1rem 0 0; color: var(--muted); font-size: .78rem; }
 .chart-empty { padding: 3rem 1rem; color: var(--muted); text-align: center; }
 
 .empty-state { grid-column: 1 / -1; padding: 4rem 1rem; color: var(--muted); text-align: center; }
@@ -225,6 +239,8 @@ button:focus-visible, a:focus-visible { outline: 3px solid #79a91c; outline-offs
   .map-card { min-height: 340px; }
   .map-caption small { display: none; }
   .metric-grid, .analytics-grid { grid-template-columns: 1fr; }
+  .courier-row { grid-template-columns: 38px 1fr auto; }
+  .operation-actions { grid-column: 2 / -1; justify-content: flex-start; }
   .wide-chart { grid-column: auto; }
   .bar-chart { overflow-x: auto; }
   .bar-column { min-width: 34px; }

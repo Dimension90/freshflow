@@ -63,4 +63,9 @@ export const api = {
   cancelOrder: (orderID) => request(`/api/v1/orders/${encodeURIComponent(orderID)}`, { method: "DELETE" }),
   delivery: (orderID) => request(`/api/v1/deliveries/order/${encodeURIComponent(orderID)}`),
   analytics: () => request("/api/v1/analytics/summary"),
+  couriers: () => request("/api/v1/operations/couriers"),
+  deliveryAction: (deliveryID, action) => request(`/api/v1/operations/deliveries/${encodeURIComponent(deliveryID)}/actions`, {
+    method: "POST",
+    body: JSON.stringify({ action }),
+  }),
 };

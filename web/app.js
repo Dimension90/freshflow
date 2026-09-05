@@ -8,6 +8,8 @@ const state = {
   order: null,
   delivery: null,
   analytics: null,
+	operations: null,
+	operationBusy: new Set(),
   busyProducts: new Set(),
   checkoutBusy: false,
   orderStream: null,
@@ -31,6 +33,8 @@ const elements = {
   orderNotice: document.querySelector("#order-notice"),
   analyticsContent: document.querySelector("#analytics-content"),
   analyticsNotice: document.querySelector("#analytics-notice"),
+	operationsContent: document.querySelector("#operations-content"),
+	operationsNotice: document.querySelector("#operations-notice"),
   toastRegion: document.querySelector("#toast-region"),
 };
 
@@ -408,6 +412,72 @@ function renderAnalytics() {
     </div>`;
 }
 
+function renderOperations() {
+  const couriers = state.operations?.couriers ?? [];
+  if (!couriers.length) {
+    elements.operationsContent.innerHTML = `<div class="empty-page"><div class="empty-orbit">⌁</div><h2>Курьеры не найдены</h2><p>Проверьте готовность delivery-service.</p></div>`;
+    return;
+  }
+  const active = couriers.filter((courier) => courier.active_delivery_id).length;
+  const available = couriers.filter((courier) => courier.status === "available").length;
+  elements.operationsContent.innerHTML = `
+    <div class="metric-grid operations-metrics">
+      ${metricCard("Всего курьеров", String(couriers.length), "courier fleet")}
+      ${metricCard("Свободны", String(available), "готовы к назначению")}
+      ${metricCard("В работе", String(active), "активные доставки")}
+      ${metricCard("Симуляция", "включена", "локальный dispatcher")}
+    </div>
+    <section class="operations-card">
+      <div class="card-heading"><div><span class="eyebrow dark">Courier fleet</span><h2>Курьеры и назначения</h2></div><span class="source-pill">PostgreSQL + Redis GEO</span></div>
+      <div class="courier-list">
+        ${couriers.map((courier) => {
+          const busy = state.operationBusy.has(courier.active_delivery_id);
+          const activeDelivery = Boolean(courier.active_delivery_id);
+          return `<article class="courier-row">
+            <div class="courier-avatar">${escapeHTML(courier.name.slice(0, 1))}</div>
+            <div class="courier-copy"><strong>${escapeHTML(courier.name)}</strong><span>${courier.status === "available" ? "Свободен" : `Заказ #${shortID(courier.active_order_id)}`}</span></div>
+            <span class="courier-status ${escapeHTML(courier.status)}">${escapeHTML(STATUS_LABELS[courier.delivery_status] ?? (courier.status === "available" ? "Доступен" : "Назначен"))}</span>
+            <div class="operation-actions">${activeDelivery ? `
+              <button type="button" data-operation="delay" data-delivery-id="${courier.active_delivery_id}" ${busy ? "disabled" : ""}>+10 сек</button>
+              <button type="button" class="complete-operation" data-operation="complete" data-delivery-id="${courier.active_delivery_id}" ${busy ? "disabled" : ""}>Завершить</button>` : `<span>Ожидает заказ</span>`}</div>
+          </article>`;
+        }).join("")}
+      </div>
+      <p class="operations-help">«+10 сек» удерживает курьера на текущей фазе симулятора и сдвигает прогноз. «Завершить» публикует обычное <code>delivery.completed</code> через outbox.</p>
+    </section>`;
+}
+
+async function loadOperations() {
+  setNotice(elements.operationsNotice, "Обновляем dispatcher…", "info");
+  try {
+    state.operations = await api.couriers();
+    setNotice(elements.operationsNotice);
+    renderOperations();
+  } catch (error) {
+    setNotice(elements.operationsNotice, readableError(error));
+    state.operations = null;
+    renderOperations();
+  }
+}
+
+async function runDeliveryAction(deliveryID, action) {
+  if (!deliveryID || state.operationBusy.has(deliveryID)) return;
+  const confirmation = action === "complete" ? "Завершить доставку вручную? Это действие опубликует delivery.completed." : "Добавить 10 секунд задержки в симуляцию?";
+  if (!window.confirm(confirmation)) return;
+  state.operationBusy.add(deliveryID);
+  renderOperations();
+  try {
+    await api.deliveryAction(deliveryID, action);
+    toast(action === "complete" ? "Доставка завершена оператором" : "К симуляции добавлено 10 секунд");
+    await loadOperations();
+  } catch (error) {
+    toast(readableError(error), "error");
+  } finally {
+    state.operationBusy.delete(deliveryID);
+    renderOperations();
+  }
+}
+
 async function loadAnalytics() {
   setNotice(elements.analyticsNotice, "Запрашиваем агрегаты…", "info");
   try {
@@ -435,7 +505,7 @@ function closeCart() {
 
 function parseRoute() {
   const [view = "catalog", id] = window.location.hash.replace(/^#/, "").split("/");
-  return { view: ["catalog", "order", "analytics"].includes(view) ? view : "catalog", id };
+  return { view: ["catalog", "order", "operations", "analytics"].includes(view) ? view : "catalog", id };
 }
 
 function navigate() {
@@ -445,6 +515,7 @@ function navigate() {
   closeCart();
   closeLiveStreams();
   if (route.view === "order") startOrderLive(route.id);
+	if (route.view === "operations") loadOperations();
   if (route.view === "analytics") loadAnalytics();
   window.scrollTo({ top: 0, behavior: "instant" });
 }
@@ -473,12 +544,17 @@ elements.cartContent.addEventListener("click", (event) => {
 elements.orderContent.addEventListener("click", (event) => {
   if (event.target.closest('[data-order-action="cancel"]')) cancelCurrentOrder();
 });
+elements.operationsContent.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-operation]");
+  if (button) runDeliveryAction(button.dataset.deliveryId, button.dataset.operation);
+});
 elements.cartToggle.addEventListener("click", openCart);
 elements.closeCart.addEventListener("click", closeCart);
 elements.mobileScrim.addEventListener("click", closeCart);
 document.querySelector("#refresh-catalog").addEventListener("click", loadShop);
 document.querySelector("#refresh-order").addEventListener("click", () => loadOrder(parseRoute().id));
 document.querySelector("#refresh-analytics").addEventListener("click", loadAnalytics);
+document.querySelector("#refresh-operations").addEventListener("click", loadOperations);
 window.addEventListener("hashchange", navigate);
 window.addEventListener("beforeunload", closeLiveStreams);
 

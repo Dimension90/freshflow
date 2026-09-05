@@ -212,6 +212,49 @@ paths:
           content:
             application/json:
               schema: {$ref: "#/components/schemas/ErrorEnvelope"}
+  /api/v1/operations/couriers:
+    get:
+      operationId: listCourierOperations
+      tags: [Operations]
+      summary: List the courier fleet and its active delivery assignments
+      responses:
+        "200":
+          description: Courier operations snapshot
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [couriers]
+                properties:
+                  couriers: {type: array, items: {$ref: "#/components/schemas/Courier"}}
+  /api/v1/operations/deliveries/{delivery_id}/actions:
+    parameters:
+      - name: delivery_id
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+    post:
+      operationId: applyDeliveryOperation
+      tags: [Operations]
+      summary: Inject a demo delay or manually complete a non-terminal delivery
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [action]
+              properties:
+                action: {type: string, enum: [delay, complete]}
+      responses:
+        "200":
+          description: Updated delivery snapshot
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Delivery"}
+        "409":
+          description: Delivery is terminal
   /api/v1/analytics/summary:
     get:
       operationId: getAnalyticsSummary
@@ -447,6 +490,20 @@ components:
         predicted_eta_seconds: {type: integer, minimum: 1}
         eta_model_version: {type: string}
         eta_updated_at: {type: string, format: date-time}
+        simulation_delay_seconds: {type: integer, minimum: 0, maximum: 600}
+    Courier:
+      type: object
+      required: [id, name, status, latitude, longitude, last_seen_at]
+      properties:
+        id: {type: string, format: uuid}
+        name: {type: string}
+        status: {type: string, enum: [available, assigned, offline]}
+        latitude: {type: number}
+        longitude: {type: number}
+        last_seen_at: {type: string, format: date-time}
+        active_delivery_id: {type: string, format: uuid, nullable: true}
+        active_order_id: {type: string, format: uuid, nullable: true}
+        delivery_status: {type: string, nullable: true}
     AnalyticsSummary:
       type: object
       required: [orders_by_hour, eta, cancellations, popular_products, status_durations]

@@ -56,6 +56,22 @@ go test ./tests/integration -count=1
 docker compose down
 ```
 
+## CI и load test
+
+GitHub Actions workflow находится в `.github/workflows/ci.yml`; он проверяет
+код, Helm и полный Compose scenario на Ubuntu runner. Для локального
+нагрузочного запуска используйте Compose profile `load`:
+
+```powershell
+$env:K6_DURATION = '30s'
+$env:K6_READ_VUS = '8'
+docker compose --profile load run --rm k6
+```
+
+Скрипт не требует адреса Docker host, потому что обращается к
+`http://api-gateway:8080` внутри Compose network. См. `load/README.md` для
+сценария, метрик и порогов.
+
 Unit-тесты ETA service вне Compose:
 
 ```powershell

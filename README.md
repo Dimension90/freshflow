@@ -95,6 +95,7 @@ flowchart LR
 9. Courier simulator публикует координаты; delivery-service обновляет live-состояние, а retryable prediction worker вызывает ETA service для каждой новой стадии.
 10. Изменения статуса проходят `created → confirmed → assembling → delivering → delivered`. Для `created` и `confirmed` доступна отмена: order-service удерживает блокировку заказа, освобождает reservation и кладёт `order.cancelled` в outbox; delivery-service освобождает назначенного курьера. UI получает статусы и координаты через SSE и закрывает потоки после terminal status.
 11. Analytics worker проецирует доменные события в ClickHouse. Стабильный `event_id`, `ReplacingMergeTree` и чтение `FINAL` подавляют эффект повторной Kafka-доставки.
+12. Операторский экран показывает fleet и активные назначения. В demo-режиме оператор может добавить 10 секунд к текущей фазе симулятора или завершить доставку; завершение публикует стандартное `delivery.completed` через outbox, поэтому order-service, notifications и analytics видят тот же доменный факт.
 
 Если резерв создан, но заказ не удалось записать, order-service запускает идемпотентную компенсацию освобождения резерва. Периодический reaper также освобождает истёкшие durable-резервы, найденные по Redis TTL-индексу или PostgreSQL fallback-запросу.
 
@@ -128,6 +129,8 @@ flowchart LR
 | `GET` | `/api/v1/orders/{order_id}/stream` | SSE-изменения статуса заказа |
 | `GET` | `/api/v1/deliveries/order/{order_id}` | назначение, ETA и текущие координаты курьера |
 | `GET` | `/api/v1/deliveries/order/{order_id}/stream` | SSE-координаты и состояние доставки |
+| `GET` | `/api/v1/operations/couriers` | fleet курьеров и активные назначения для dispatcher UI |
+| `POST` | `/api/v1/operations/deliveries/{delivery_id}/actions` | demo-команды `delay` и `complete` |
 | `GET` | `/api/v1/analytics/summary` | агрегаты ClickHouse для dashboard |
 | `POST` | `/predict-eta` | внутренний API ETA service |
 
@@ -287,6 +290,7 @@ make py-test
 make web-test
 make smoke
 make integration
+make load
 make down
 ```
 
@@ -303,6 +307,27 @@ docker compose down
 ```
 
 Compose запускает PostgreSQL и его migration job, Redis, Kafka в KRaft-режиме без ZooKeeper, ClickHouse и idempotent DDL job, Go-сервисы, FastAPI ETA service, Prometheus, Grafana, Jaeger, Swagger UI и nginx frontend. `kafka-init` создаёт четыре доменных topic. Web UI доступен на `http://localhost:8089`, gateway — на `http://localhost:8080`, ETA API — на `http://localhost:8090`, Swagger — на `http://localhost:8088`, ClickHouse HTTP — на `http://localhost:8123`, Grafana — на `http://localhost:3000`, Jaeger — на `http://localhost:16686`; `/readyz` проверяет инфраструктуру и readiness всех upstream-сервисов.
+
+## CI и нагрузочный сценарий
+
+Workflow [`.github/workflows/ci.yml`](.github/workflows/ci.yml) запускается для
+`main`, pull request и вручную. Он проверяет Go, FastAPI ETA service, frontend,
+Compose-конфигурацию, OpenAPI и Helm; затем поднимает весь Compose stack,
+выполняет smoke/integration checks и короткий k6 run. При сбое end-to-end job
+сохраняет логи Compose как artifact.
+
+Полный локальный k6-сценарий:
+
+```powershell
+$env:FRESHFLOW_LOAD_DURATION = '30s'
+$env:FRESHFLOW_LOAD_READ_VUS = '8'
+docker compose --profile load run --rm k6
+```
+
+Он создаёт реальные idempotent-заказы одним serial checkout VU и одновременно
+нагружает каталог, аналитику и dispatcher API. Пороги: HTTP failure rate < 3%,
+checkout failure rate < 5%, p95 HTTP latency < 1 s. Детали — в
+[`load/README.md`](load/README.md).
 
 Демонстрационный пользователь: `00000000-0000-4000-8000-000000000001`. Каталог заполняется пятью товарами миграцией `000002_catalog`.
 

@@ -6,6 +6,7 @@ Dependency-free ES module SPA served by nginx. It talks only to the public API g
 - idempotent checkout;
 - live order status and courier-position updates through Server-Sent Events;
 - cancellation of created or confirmed orders;
+- dispatcher screen with courier fleet, active assignments and demo delivery controls;
 - ClickHouse analytics dashboard.
 
 The Compose URL is `http://localhost:8089`. For a static-only preview run

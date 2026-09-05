@@ -62,6 +62,7 @@ func New(options Options) http.Handler {
 	mux.Handle("/api/v1/orders", s.reverseProxy(options.OrderServiceURL, "/api/v1/orders", "/internal/v1/orders"))
 	mux.Handle("/api/v1/orders/", s.reverseProxy(options.OrderServiceURL, "/api/v1/orders", "/internal/v1/orders"))
 	mux.Handle("/api/v1/deliveries/", s.reverseProxy(options.DeliveryServiceURL, "/api/v1/deliveries", "/internal/v1/deliveries"))
+	mux.Handle("/api/v1/operations/", s.reverseProxy(options.DeliveryServiceURL, "/api/v1/operations", "/internal/v1/operations"))
 	mux.Handle("/api/v1/analytics/", s.reverseProxy(options.AnalyticsServiceURL, "/api/v1/analytics", "/internal/v1/analytics"))
 
 	return platformhttpx.Wrap("api-gateway", options.Logger, mux)

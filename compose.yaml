@@ -222,6 +222,21 @@ services:
     init: true
     restart: unless-stopped
 
+  k6:
+    image: grafana/k6:0.55.0
+    profiles: ["load"]
+    environment:
+      BASE_URL: http://api-gateway:8080
+      FRESHFLOW_LOAD_DURATION: ${FRESHFLOW_LOAD_DURATION:-30s}
+      FRESHFLOW_LOAD_READ_VUS: ${FRESHFLOW_LOAD_READ_VUS:-8}
+    volumes:
+      - ./load/k6:/scripts:ro
+    command: ["run", "/scripts/checkout.js"]
+    depends_on:
+      api-gateway:
+        condition: service_healthy
+    restart: "no"
+
   catalog-service:
     build:
       context: .

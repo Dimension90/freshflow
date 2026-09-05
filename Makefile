@@ -1,7 +1,7 @@
-.PHONY: help test py-test web-test helm-lint integration build up down logs ps config smoke verify
+.PHONY: help test py-test web-test helm-lint integration build up down logs ps config smoke load verify
 
 help:
-	@echo "FreshFlow commands: test py-test web-test helm-lint build up down logs ps config smoke verify"
+	@echo "FreshFlow commands: test py-test web-test helm-lint build up down logs ps config smoke load verify"
 
 test:
 	go test ./...
@@ -40,6 +40,9 @@ config:
 
 smoke:
 	pwsh -NoProfile -File scripts/smoke.ps1
+
+load:
+	docker compose --profile load run --rm k6
 
 verify:
 	pwsh -NoProfile -File scripts/verify-structure.ps1

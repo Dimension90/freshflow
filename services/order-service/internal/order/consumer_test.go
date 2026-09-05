@@ -3,7 +3,7 @@ package order
 import "testing"
 
 func TestValidTransition(t *testing.T) {
-	valid := [][2]string{{"created", "confirmed"}, {"confirmed", "assembling"}, {"assembling", "delivering"}, {"delivering", "delivered"}}
+	valid := [][2]string{{"created", "confirmed"}, {"confirmed", "assembling"}, {"assembling", "delivering"}, {"delivering", "delivered"}, {"confirmed", "delivered"}, {"assembling", "delivered"}}
 	for _, transition := range valid {
 		if !validTransition(transition[0], transition[1]) {
 			t.Fatalf("transition %s -> %s rejected", transition[0], transition[1])

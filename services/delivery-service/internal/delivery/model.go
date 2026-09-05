@@ -3,28 +3,41 @@ package delivery
 import "time"
 
 type Delivery struct {
-	ID                   string     `json:"id"`
-	OrderID              string     `json:"order_id"`
-	CourierID            string     `json:"courier_id"`
-	CourierName          string     `json:"courier_name"`
-	Status               string     `json:"status"`
-	PickupLatitude       float64    `json:"pickup_latitude"`
-	PickupLongitude      float64    `json:"pickup_longitude"`
-	DestinationLatitude  float64    `json:"destination_latitude"`
-	DestinationLongitude float64    `json:"destination_longitude"`
-	AssignedAt           time.Time  `json:"assigned_at"`
-	StartedAt            *time.Time `json:"started_at,omitempty"`
-	CompletedAt          *time.Time `json:"completed_at,omitempty"`
-	CourierLatitude      float64    `json:"courier_latitude"`
-	CourierLongitude     float64    `json:"courier_longitude"`
-	PredictedETASeconds  *int       `json:"predicted_eta_seconds,omitempty"`
-	ETAModelVersion      *string    `json:"eta_model_version,omitempty"`
-	ETAUpdatedAt         *time.Time `json:"eta_updated_at,omitempty"`
+	ID                     string     `json:"id"`
+	OrderID                string     `json:"order_id"`
+	CourierID              string     `json:"courier_id"`
+	CourierName            string     `json:"courier_name"`
+	Status                 string     `json:"status"`
+	PickupLatitude         float64    `json:"pickup_latitude"`
+	PickupLongitude        float64    `json:"pickup_longitude"`
+	DestinationLatitude    float64    `json:"destination_latitude"`
+	DestinationLongitude   float64    `json:"destination_longitude"`
+	AssignedAt             time.Time  `json:"assigned_at"`
+	StartedAt              *time.Time `json:"started_at,omitempty"`
+	CompletedAt            *time.Time `json:"completed_at,omitempty"`
+	CourierLatitude        float64    `json:"courier_latitude"`
+	CourierLongitude       float64    `json:"courier_longitude"`
+	PredictedETASeconds    *int       `json:"predicted_eta_seconds,omitempty"`
+	ETAModelVersion        *string    `json:"eta_model_version,omitempty"`
+	ETAUpdatedAt           *time.Time `json:"eta_updated_at,omitempty"`
+	SimulationDelaySeconds int        `json:"simulation_delay_seconds"`
 }
 
 type Assignment struct {
 	Delivery
 	CorrelationID string `json:"correlation_id"`
+}
+
+type Courier struct {
+	ID               string    `json:"id"`
+	Name             string    `json:"name"`
+	Status           string    `json:"status"`
+	Latitude         float64   `json:"latitude"`
+	Longitude        float64   `json:"longitude"`
+	LastSeenAt       time.Time `json:"last_seen_at"`
+	ActiveDeliveryID *string   `json:"active_delivery_id,omitempty"`
+	ActiveOrderID    *string   `json:"active_order_id,omitempty"`
+	DeliveryStatus   *string   `json:"delivery_status,omitempty"`
 }
 
 type orderCreatedPayload struct {

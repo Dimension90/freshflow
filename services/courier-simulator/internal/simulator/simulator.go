@@ -34,14 +34,15 @@ var couriers = []courier{
 }
 
 type assignment struct {
-	ID                   string    `json:"id"`
-	CourierID            string    `json:"courier_id"`
-	PickupLatitude       float64   `json:"pickup_latitude"`
-	PickupLongitude      float64   `json:"pickup_longitude"`
-	DestinationLatitude  float64   `json:"destination_latitude"`
-	DestinationLongitude float64   `json:"destination_longitude"`
-	AssignedAt           time.Time `json:"assigned_at"`
-	CorrelationID        string    `json:"correlation_id"`
+	ID                     string    `json:"id"`
+	CourierID              string    `json:"courier_id"`
+	PickupLatitude         float64   `json:"pickup_latitude"`
+	PickupLongitude        float64   `json:"pickup_longitude"`
+	DestinationLatitude    float64   `json:"destination_latitude"`
+	DestinationLongitude   float64   `json:"destination_longitude"`
+	AssignedAt             time.Time `json:"assigned_at"`
+	SimulationDelaySeconds int       `json:"simulation_delay_seconds"`
+	CorrelationID          string    `json:"correlation_id"`
 }
 
 type Runner struct {
@@ -121,7 +122,7 @@ func simulatedLocation(base courier, active assignment, now time.Time, index int
 	}
 	result.DeliveryID = active.ID
 	result.CorrelationID = active.CorrelationID
-	elapsed := now.Sub(active.AssignedAt)
+	elapsed := now.Sub(active.AssignedAt) - time.Duration(active.SimulationDelaySeconds)*time.Second
 	if elapsed < 3*time.Second {
 		result.Phase = "assembling"
 		result.Latitude, result.Longitude = active.PickupLatitude, active.PickupLongitude
