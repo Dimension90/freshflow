@@ -1,0 +1,527 @@
+openapi: 3.1.0
+info:
+  title: FreshFlow API
+  version: 0.4.0
+  description: Catalog, cart, idempotent checkout, delivery and ClickHouse analytics API exposed by api-gateway.
+servers:
+  - url: http://localhost:8080
+paths:
+  /healthz:
+    get:
+      operationId: health
+      summary: Process liveness
+      responses:
+        "200":
+          description: Gateway process is alive
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/HealthResponse"}
+  /readyz:
+    get:
+      operationId: readiness
+      summary: Critical dependency readiness
+      responses:
+        "200":
+          description: All dependencies are ready
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ReadinessResponse"}
+        "503": {$ref: "#/components/responses/ServiceUnavailable"}
+  /api/v1/catalog/products:
+    get:
+      operationId: listProducts
+      tags: [Catalog]
+      summary: List active products and current availability
+      responses:
+        "200":
+          description: Product catalog
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [products]
+                properties:
+                  products:
+                    type: array
+                    items: {$ref: "#/components/schemas/Product"}
+        "503": {$ref: "#/components/responses/ServiceUnavailable"}
+  /api/v1/carts/{user_id}:
+    parameters:
+      - $ref: "#/components/parameters/UserID"
+    get:
+      operationId: getCart
+      tags: [Cart]
+      summary: Get the durable cart
+      responses:
+        "200":
+          description: Cart snapshot
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Cart"}
+        "400": {$ref: "#/components/responses/BadRequest"}
+  /api/v1/carts/{user_id}/items/{product_id}:
+    parameters:
+      - $ref: "#/components/parameters/UserID"
+      - $ref: "#/components/parameters/ProductID"
+    put:
+      operationId: setCartItem
+      tags: [Cart]
+      summary: Set product quantity in a cart
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [quantity]
+              additionalProperties: false
+              properties:
+                quantity: {type: integer, minimum: 1, maximum: 99}
+      responses:
+        "200":
+          description: Updated cart
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Cart"}
+        "400": {$ref: "#/components/responses/BadRequest"}
+    delete:
+      operationId: deleteCartItem
+      tags: [Cart]
+      summary: Remove a product from a cart
+      responses:
+        "200":
+          description: Updated cart
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Cart"}
+        "400": {$ref: "#/components/responses/BadRequest"}
+  /api/v1/orders:
+    post:
+      operationId: createOrder
+      tags: [Orders]
+      summary: Reserve inventory and create an order idempotently
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: {type: string, minLength: 1, maxLength: 128, pattern: "^[A-Za-z0-9][A-Za-z0-9._:-]*$"}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [user_id, cart_version]
+              additionalProperties: false
+              properties:
+                user_id: {type: string, format: uuid}
+                cart_version: {type: integer, minimum: 1}
+      responses:
+        "201":
+          description: Order created or the original idempotent response replayed
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Order"}
+        "400": {$ref: "#/components/responses/BadRequest"}
+        "409":
+          description: Cart version, inventory or idempotency conflict
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ErrorEnvelope"}
+        "503": {$ref: "#/components/responses/ServiceUnavailable"}
+  /api/v1/orders/{order_id}:
+    parameters:
+      - name: order_id
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+    get:
+      operationId: getOrder
+      tags: [Orders]
+      summary: Get an order snapshot
+      responses:
+        "200":
+          description: Order snapshot
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Order"}
+        "404":
+          description: Order not found
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ErrorEnvelope"}
+    delete:
+      operationId: cancelOrder
+      tags: [Orders]
+      summary: Cancel a created or confirmed order and release its inventory reservation
+      responses:
+        "200":
+          description: Cancelled order snapshot
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Order"}
+        "409":
+          description: The order is already being assembled, delivered, or otherwise terminal
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ErrorEnvelope"}
+  /api/v1/orders/{order_id}/stream:
+    parameters:
+      - name: order_id
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+    get:
+      operationId: streamOrder
+      tags: [Orders]
+      summary: Stream initial and changed order snapshots as Server-Sent Events
+      responses:
+        "200":
+          description: text/event-stream with `order` events
+  /api/v1/deliveries/order/{order_id}/stream:
+    parameters:
+      - name: order_id
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+    get:
+      operationId: streamDelivery
+      tags: [Delivery]
+      summary: Stream pending or courier-location delivery snapshots as Server-Sent Events
+      responses:
+        "200":
+          description: text/event-stream with `pending` and `delivery` events
+  /api/v1/deliveries/order/{order_id}:
+    parameters:
+      - name: order_id
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+    get:
+      operationId: getDeliveryByOrder
+      tags: [Delivery]
+      summary: Get courier assignment and delivery state
+      responses:
+        "200":
+          description: Delivery snapshot
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Delivery"}
+        "404":
+          description: Delivery not assigned yet
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ErrorEnvelope"}
+  /api/v1/analytics/summary:
+    get:
+      operationId: getAnalyticsSummary
+      tags: [Analytics]
+      summary: Get the ClickHouse dashboard snapshot
+      responses:
+        "200":
+          description: Order and delivery aggregates
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/AnalyticsSummary"}
+        "503": {$ref: "#/components/responses/ServiceUnavailable"}
+  /api/v1/analytics/orders-by-hour:
+    get:
+      operationId: getOrdersByHour
+      tags: [Analytics]
+      summary: Count created orders by hour
+      responses:
+        "200":
+          description: Hourly order counts
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [orders_by_hour]
+                properties:
+                  orders_by_hour: {type: array, items: {$ref: "#/components/schemas/HourBucket"}}
+  /api/v1/analytics/eta:
+    get:
+      operationId: getETAAnalytics
+      tags: [Analytics]
+      summary: Compare average predicted and actual ETA
+      responses:
+        "200":
+          description: ETA averages
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ETAStats"}
+  /api/v1/analytics/on-time:
+    get:
+      operationId: getOnTimeRatio
+      tags: [Analytics]
+      summary: Get the ratio of deliveries completed within predicted ETA
+      responses:
+        "200":
+          description: On-time delivery ratio, null until predictions exist
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [on_time_ratio]
+                properties:
+                  on_time_ratio: {type: number, nullable: true, minimum: 0, maximum: 1}
+  /api/v1/analytics/cancellations:
+    get:
+      operationId: getCancellationCount
+      tags: [Analytics]
+      summary: Count cancelled orders
+      responses:
+        "200":
+          description: Cancellation count
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [cancellations]
+                properties:
+                  cancellations: {type: integer, minimum: 0}
+  /api/v1/analytics/popular-products:
+    get:
+      operationId: getPopularProducts
+      tags: [Analytics]
+      summary: Rank products by ordered quantity
+      responses:
+        "200":
+          description: Ten most ordered products
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [popular_products]
+                properties:
+                  popular_products: {type: array, items: {$ref: "#/components/schemas/ProductStat"}}
+  /api/v1/analytics/status-durations:
+    get:
+      operationId: getStatusDurations
+      tags: [Analytics]
+      summary: Get average time spent in each order status
+      responses:
+        "200":
+          description: Average status durations
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status_durations]
+                properties:
+                  status_durations: {type: array, items: {$ref: "#/components/schemas/StatusDuration"}}
+  /predict-eta:
+    post:
+      operationId: predictETA
+      tags: [ETA]
+      summary: Calculate delivery ETA using the current model
+      servers:
+        - url: http://localhost:8090
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/ETARequest"}
+      responses:
+        "200":
+          description: ETA prediction and transparent factor breakdown
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ETAPrediction"}
+        "422":
+          description: Feature validation failed
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ErrorEnvelope"}
+components:
+  parameters:
+    UserID:
+      name: user_id
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    ProductID:
+      name: product_id
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+  responses:
+    BadRequest:
+      description: Request validation failed
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/ErrorEnvelope"}
+    ServiceUnavailable:
+      description: A required dependency is unavailable
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/ErrorEnvelope"}
+  schemas:
+    HealthResponse:
+      type: object
+      required: [status, service]
+      properties:
+        status: {type: string, enum: [up]}
+        service: {type: string, enum: [api-gateway]}
+    DependencyCheck:
+      type: object
+      required: [status, duration_ms]
+      properties:
+        status: {type: string, enum: [up, down]}
+        duration_ms: {type: integer, minimum: 0}
+    ReadinessResponse:
+      type: object
+      required: [status, checks]
+      properties:
+        status: {type: string, enum: [ready, not_ready]}
+        checks:
+          type: object
+          additionalProperties: {$ref: "#/components/schemas/DependencyCheck"}
+    Product:
+      type: object
+      required: [id, sku, name, description, price_minor, currency, available_quantity]
+      properties:
+        id: {type: string, format: uuid}
+        sku: {type: string}
+        name: {type: string}
+        description: {type: string}
+        price_minor: {type: integer, minimum: 0}
+        currency: {type: string, minLength: 3, maxLength: 3}
+        available_quantity: {type: integer, minimum: 0}
+    CartItem:
+      type: object
+      required: [product_id, quantity]
+      properties:
+        product_id: {type: string, format: uuid}
+        quantity: {type: integer, minimum: 1, maximum: 99}
+    Cart:
+      type: object
+      required: [user_id, version, items, updated_at]
+      properties:
+        user_id: {type: string, format: uuid}
+        version: {type: integer, minimum: 0}
+        items: {type: array, items: {$ref: "#/components/schemas/CartItem"}}
+        updated_at: {type: string, format: date-time}
+    OrderItem:
+      type: object
+      required: [product_id, product_name, quantity, unit_price_minor, currency]
+      properties:
+        product_id: {type: string, format: uuid}
+        product_name: {type: string}
+        quantity: {type: integer, minimum: 1}
+        unit_price_minor: {type: integer, minimum: 0}
+        currency: {type: string}
+    Order:
+      type: object
+      required: [id, user_id, reservation_id, cart_version, status, items, total_amount_minor, currency, delivery_latitude, delivery_longitude, created_at]
+      properties:
+        id: {type: string, format: uuid}
+        user_id: {type: string, format: uuid}
+        reservation_id: {type: string, format: uuid}
+        cart_version: {type: integer}
+        status: {type: string, enum: [created, confirmed, assembling, delivering, delivered, cancelled]}
+        items: {type: array, items: {$ref: "#/components/schemas/OrderItem"}}
+        total_amount_minor: {type: integer, minimum: 0}
+        currency: {type: string}
+        delivery_latitude: {type: number, minimum: -90, maximum: 90}
+        delivery_longitude: {type: number, minimum: -180, maximum: 180}
+        created_at: {type: string, format: date-time}
+    Delivery:
+      type: object
+      required: [id, order_id, courier_id, courier_name, status, pickup_latitude, pickup_longitude, destination_latitude, destination_longitude, assigned_at, courier_latitude, courier_longitude]
+      properties:
+        id: {type: string, format: uuid}
+        order_id: {type: string, format: uuid}
+        courier_id: {type: string, format: uuid}
+        courier_name: {type: string}
+        status: {type: string, enum: [assigned, assembling, delivering, completed, cancelled]}
+        pickup_latitude: {type: number}
+        pickup_longitude: {type: number}
+        destination_latitude: {type: number}
+        destination_longitude: {type: number}
+        assigned_at: {type: string, format: date-time}
+        started_at: {type: string, format: date-time}
+        completed_at: {type: string, format: date-time}
+        courier_latitude: {type: number, minimum: -90, maximum: 90}
+        courier_longitude: {type: number, minimum: -180, maximum: 180}
+        predicted_eta_seconds: {type: integer, minimum: 1}
+        eta_model_version: {type: string}
+        eta_updated_at: {type: string, format: date-time}
+    AnalyticsSummary:
+      type: object
+      required: [orders_by_hour, eta, cancellations, popular_products, status_durations]
+      properties:
+        orders_by_hour:
+          type: array
+          items: {$ref: "#/components/schemas/HourBucket"}
+        eta: {$ref: "#/components/schemas/ETAStats"}
+        on_time_ratio: {type: number, nullable: true, minimum: 0, maximum: 1}
+        cancellations: {type: integer, minimum: 0}
+        popular_products:
+          type: array
+          items: {$ref: "#/components/schemas/ProductStat"}
+        status_durations:
+          type: array
+          items: {$ref: "#/components/schemas/StatusDuration"}
+    HourBucket:
+      type: object
+      required: [hour, orders]
+      properties:
+        hour: {type: string, format: date-time}
+        orders: {type: integer, minimum: 0}
+    ETAStats:
+      type: object
+      properties:
+        average_predicted_eta_seconds: {type: number, nullable: true}
+        average_actual_eta_seconds: {type: number, nullable: true}
+    ETARequest:
+      type: object
+      additionalProperties: false
+      required: [distance_km, item_count, stage, district_load, available_couriers]
+      properties:
+        distance_km: {type: number, minimum: 0, maximum: 500}
+        item_count: {type: integer, minimum: 1, maximum: 500}
+        stage: {type: string, enum: [created, confirmed, assembling, delivering]}
+        district_load: {type: number, minimum: 0.5, maximum: 3}
+        available_couriers: {type: integer, minimum: 0, maximum: 10000}
+    ETAPrediction:
+      type: object
+      required: [predicted_eta_seconds, model_version, computed_at, breakdown]
+      properties:
+        predicted_eta_seconds: {type: integer, minimum: 1}
+        model_version: {type: string}
+        computed_at: {type: string, format: date-time}
+        breakdown:
+          type: object
+          required: [travel_seconds, handling_seconds, load_penalty_seconds, availability_penalty_seconds]
+          properties:
+            travel_seconds: {type: integer}
+            handling_seconds: {type: integer}
+            load_penalty_seconds: {type: integer}
+            availability_penalty_seconds: {type: integer}
+    ProductStat:
+      type: object
+      required: [product_id, product_name, quantity]
+      properties:
+        product_id: {type: string, format: uuid}
+        product_name: {type: string}
+        quantity: {type: integer, minimum: 0}
+    StatusDuration:
+      type: object
+      required: [status, average_duration_seconds]
+      properties:
+        status: {type: string}
+        average_duration_seconds: {type: number, minimum: 0}
+    APIError:
+      type: object
+      required: [code, message, correlation_id]
+      properties:
+        code: {type: string}
+        message: {type: string}
+        correlation_id: {type: string}
+        details: {}
+    ErrorEnvelope:
+      type: object
+      required: [error]
+      properties:
+        error: {$ref: "#/components/schemas/APIError"}

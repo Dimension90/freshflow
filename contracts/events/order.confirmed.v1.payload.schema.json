@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "order.confirmed v1 payload",
+  "type": "object",
+  "required": ["order_id", "confirmed_at"],
+  "properties": {
+    "order_id": {"type": "string", "format": "uuid"},
+    "confirmed_at": {"type": "string", "format": "date-time"}
+  }
+}
+

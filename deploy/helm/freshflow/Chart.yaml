@@ -1,0 +1,9 @@
+apiVersion: v2
+name: freshflow
+description: Local Kubernetes stack for the FreshFlow delivery platform
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+kubeVersion: ">=1.27.0-0"
+maintainers:
+  - name: FreshFlow

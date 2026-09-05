@@ -1,0 +1,6 @@
+CREATE SCHEMA catalog;
+CREATE SCHEMA cart;
+CREATE SCHEMA orders;
+CREATE SCHEMA delivery;
+CREATE SCHEMA notifications;
+

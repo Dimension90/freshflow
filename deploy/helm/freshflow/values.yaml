@@ -1,0 +1,132 @@
+nameOverride: ""
+fullnameOverride: ""
+
+imagePullPolicy: IfNotPresent
+
+images:
+  apiGateway: freshflow/api-gateway:dev
+  catalogService: freshflow/catalog-service:dev
+  cartService: freshflow/cart-service:dev
+  orderService: freshflow/order-service:dev
+  deliveryService: freshflow/delivery-service:dev
+  notificationWorker: freshflow/notification-worker:dev
+  courierSimulator: freshflow/courier-simulator:dev
+  analyticsWorker: freshflow/analytics-worker:dev
+  etaService: freshflow/eta-service:dev
+  web: freshflow/web:dev
+  postgresMigrations: freshflow/postgres-migrations:dev
+  clickhouseMigrations: freshflow/clickhouse-migrations:dev
+
+localDependencies:
+  enabled: true
+  postgresImage: postgres:16.4-alpine3.20
+  redisImage: redis:7.4.0-alpine3.20
+  kafkaImage: apache/kafka:3.8.0
+  clickhouseImage: clickhouse/clickhouse-server:26.6.2.160-alpine
+  jaegerImage: jaegertracing/all-in-one:1.62.0
+  storage:
+    enabled: false
+    size: 2Gi
+    storageClass: ""
+
+demoSecret:
+  postgresUser: freshflow
+  postgresPassword: freshflow
+  postgresDatabase: freshflow
+  clickhouseUser: freshflow
+  clickhousePassword: freshflow
+
+apps:
+  - name: api-gateway
+    image: apiGateway
+    port: 8080
+    replicas: 1
+    healthPath: /readyz
+    resources:
+      requests: {cpu: 100m, memory: 128Mi}
+      limits: {cpu: 500m, memory: 256Mi}
+  - name: catalog-service
+    image: catalogService
+    port: 8081
+    replicas: 1
+    healthPath: /readyz
+    resources:
+      requests: {cpu: 100m, memory: 128Mi}
+      limits: {cpu: 500m, memory: 256Mi}
+  - name: cart-service
+    image: cartService
+    port: 8082
+    replicas: 1
+    healthPath: /readyz
+    resources:
+      requests: {cpu: 100m, memory: 128Mi}
+      limits: {cpu: 500m, memory: 256Mi}
+  - name: order-service
+    image: orderService
+    port: 8083
+    replicas: 1
+    healthPath: /readyz
+    resources:
+      requests: {cpu: 150m, memory: 160Mi}
+      limits: {cpu: 750m, memory: 384Mi}
+  - name: delivery-service
+    image: deliveryService
+    port: 8084
+    replicas: 1
+    healthPath: /readyz
+    resources:
+      requests: {cpu: 100m, memory: 128Mi}
+      limits: {cpu: 500m, memory: 256Mi}
+  - name: courier-simulator
+    image: courierSimulator
+    port: 8085
+    replicas: 1
+    healthPath: /readyz
+    resources:
+      requests: {cpu: 75m, memory: 96Mi}
+      limits: {cpu: 300m, memory: 192Mi}
+  - name: notification-worker
+    image: notificationWorker
+    port: 8086
+    replicas: 1
+    healthPath: /readyz
+    resources:
+      requests: {cpu: 75m, memory: 96Mi}
+      limits: {cpu: 300m, memory: 192Mi}
+  - name: analytics-worker
+    image: analyticsWorker
+    port: 8087
+    replicas: 1
+    healthPath: /readyz
+    resources:
+      requests: {cpu: 150m, memory: 160Mi}
+      limits: {cpu: 750m, memory: 384Mi}
+  - name: eta-service
+    image: etaService
+    port: 8090
+    replicas: 1
+    healthPath: /readyz
+    resources:
+      requests: {cpu: 100m, memory: 128Mi}
+      limits: {cpu: 500m, memory: 256Mi}
+  - name: web
+    image: web
+    port: 8080
+    servicePort: 80
+    replicas: 1
+    healthPath: /healthz
+    resources:
+      requests: {cpu: 25m, memory: 32Mi}
+      limits: {cpu: 150m, memory: 96Mi}
+
+hpa:
+  orderService:
+    enabled: true
+    minReplicas: 1
+    maxReplicas: 3
+    averageCPUUtilization: 70
+
+ingress:
+  enabled: false
+  className: ""
+  host: freshflow.local

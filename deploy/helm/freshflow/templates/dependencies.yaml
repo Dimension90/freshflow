@@ -1,0 +1,247 @@
+{{- if .Values.localDependencies.enabled }}
+{{- $fullname := include "freshflow.fullname" . }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $fullname }}-postgres
+  labels: {{- include "freshflow.labels" . | nindent 4 }}
+spec:
+  selector: {app.kubernetes.io/instance: {{ .Release.Name }}, app.kubernetes.io/component: postgres}
+  ports: [{name: postgres, port: 5432, targetPort: postgres}]
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ $fullname }}-postgres
+  labels:
+    {{- include "freshflow.labels" . | nindent 4 }}
+    app.kubernetes.io/component: postgres
+spec:
+  serviceName: {{ $fullname }}-postgres
+  replicas: 1
+  selector:
+    matchLabels: {app.kubernetes.io/instance: {{ .Release.Name }}, app.kubernetes.io/component: postgres}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/instance: {{ .Release.Name }}, app.kubernetes.io/component: postgres}
+    spec:
+      containers:
+        - name: postgres
+          image: {{ .Values.localDependencies.postgresImage | quote }}
+          ports: [{name: postgres, containerPort: 5432}]
+          env:
+            - {name: POSTGRES_DB, value: {{ .Values.demoSecret.postgresDatabase | quote }}}
+            - {name: POSTGRES_USER, value: {{ .Values.demoSecret.postgresUser | quote }}}
+            - name: POSTGRES_PASSWORD
+              valueFrom: {secretKeyRef: {name: {{ $fullname }}-runtime, key: FRESHFLOW_POSTGRES_PASSWORD}}
+          volumeMounts: [{name: data, mountPath: /var/lib/postgresql/data}]
+          readinessProbe:
+            exec: {command: [sh, -ec, pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"]}
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            exec: {command: [sh, -ec, pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"]}
+            initialDelaySeconds: 15
+            periodSeconds: 10
+  {{- if .Values.localDependencies.storage.enabled }}
+  volumeClaimTemplates:
+    - metadata: {name: data}
+      spec:
+        accessModes: [ReadWriteOnce]
+        {{- with .Values.localDependencies.storage.storageClass }}
+        storageClassName: {{ . | quote }}
+        {{- end }}
+        resources: {requests: {storage: {{ $.Values.localDependencies.storage.size | quote }}}}
+  {{- else }}
+      volumes: [{name: data, emptyDir: {}}]
+  {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $fullname }}-redis
+  labels: {{- include "freshflow.labels" . | nindent 4 }}
+spec:
+  selector: {app.kubernetes.io/instance: {{ .Release.Name }}, app.kubernetes.io/component: redis}
+  ports: [{name: redis, port: 6379, targetPort: redis}]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $fullname }}-redis
+  labels:
+    {{- include "freshflow.labels" . | nindent 4 }}
+    app.kubernetes.io/component: redis
+spec:
+  replicas: 1
+  selector: {matchLabels: {app.kubernetes.io/instance: {{ .Release.Name }}, app.kubernetes.io/component: redis}}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/instance: {{ .Release.Name }}, app.kubernetes.io/component: redis}
+    spec:
+      containers:
+        - name: redis
+          image: {{ .Values.localDependencies.redisImage | quote }}
+          args: [redis-server, --appendonly, "yes", --save, "60", "1"]
+          ports: [{name: redis, containerPort: 6379}]
+          readinessProbe: {exec: {command: [redis-cli, ping]}, initialDelaySeconds: 3, periodSeconds: 5}
+          livenessProbe: {exec: {command: [redis-cli, ping]}, initialDelaySeconds: 10, periodSeconds: 10}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $fullname }}-kafka
+  labels: {{- include "freshflow.labels" . | nindent 4 }}
+spec:
+  selector: {app.kubernetes.io/instance: {{ .Release.Name }}, app.kubernetes.io/component: kafka}
+  ports:
+    - {name: kafka, port: 9092, targetPort: kafka}
+    - {name: controller, port: 9093, targetPort: controller}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ $fullname }}-kafka
+  labels:
+    {{- include "freshflow.labels" . | nindent 4 }}
+    app.kubernetes.io/component: kafka
+spec:
+  serviceName: {{ $fullname }}-kafka
+  replicas: 1
+  selector: {matchLabels: {app.kubernetes.io/instance: {{ .Release.Name }}, app.kubernetes.io/component: kafka}}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/instance: {{ .Release.Name }}, app.kubernetes.io/component: kafka}
+    spec:
+      containers:
+        - name: kafka
+          image: {{ .Values.localDependencies.kafkaImage | quote }}
+          ports:
+            - {name: kafka, containerPort: 9092}
+            - {name: controller, containerPort: 9093}
+          env:
+            - {name: KAFKA_NODE_ID, value: "1"}
+            - {name: KAFKA_PROCESS_ROLES, value: broker,controller}
+            - {name: KAFKA_LISTENERS, value: PLAINTEXT://:9092,CONTROLLER://:9093}
+            - {name: KAFKA_ADVERTISED_LISTENERS, value: PLAINTEXT://{{ $fullname }}-kafka:9092}
+            - {name: KAFKA_LISTENER_SECURITY_PROTOCOL_MAP, value: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT}
+            - {name: KAFKA_INTER_BROKER_LISTENER_NAME, value: PLAINTEXT}
+            - {name: KAFKA_CONTROLLER_LISTENER_NAMES, value: CONTROLLER}
+            - {name: KAFKA_CONTROLLER_QUORUM_VOTERS, value: 1@{{ $fullname }}-kafka:9093}
+            - {name: KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR, value: "1"}
+            - {name: KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR, value: "1"}
+            - {name: KAFKA_TRANSACTION_STATE_LOG_MIN_ISR, value: "1"}
+            - {name: KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS, value: "0"}
+            - {name: KAFKA_AUTO_CREATE_TOPICS_ENABLE, value: "false"}
+          readinessProbe:
+            exec: {command: [sh, -ec, /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list]}
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket: {port: kafka}
+            initialDelaySeconds: 30
+            periodSeconds: 15
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $fullname }}-clickhouse
+  labels: {{- include "freshflow.labels" . | nindent 4 }}
+spec:
+  selector: {app.kubernetes.io/instance: {{ .Release.Name }}, app.kubernetes.io/component: clickhouse}
+  ports:
+    - {name: http, port: 8123, targetPort: http}
+    - {name: native, port: 9000, targetPort: native}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ $fullname }}-clickhouse
+  labels:
+    {{- include "freshflow.labels" . | nindent 4 }}
+    app.kubernetes.io/component: clickhouse
+spec:
+  serviceName: {{ $fullname }}-clickhouse
+  replicas: 1
+  selector: {matchLabels: {app.kubernetes.io/instance: {{ .Release.Name }}, app.kubernetes.io/component: clickhouse}}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/instance: {{ .Release.Name }}, app.kubernetes.io/component: clickhouse}
+    spec:
+      containers:
+        - name: clickhouse
+          image: {{ .Values.localDependencies.clickhouseImage | quote }}
+          ports:
+            - {name: http, containerPort: 8123}
+            - {name: native, containerPort: 9000}
+          env:
+            - {name: CLICKHOUSE_DB, value: freshflow}
+            - {name: CLICKHOUSE_USER, valueFrom: {secretKeyRef: {name: {{ $fullname }}-runtime, key: FRESHFLOW_CLICKHOUSE_USER}}}
+            - {name: CLICKHOUSE_PASSWORD, valueFrom: {secretKeyRef: {name: {{ $fullname }}-runtime, key: FRESHFLOW_CLICKHOUSE_PASSWORD}}}
+            - {name: CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT, value: "1"}
+          readinessProbe:
+            exec: {command: [sh, -ec, clickhouse-client --user "$CLICKHOUSE_USER" --password "$CLICKHOUSE_PASSWORD" --query 'SELECT 1']}
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          livenessProbe:
+            tcpSocket: {port: native}
+            initialDelaySeconds: 20
+            periodSeconds: 15
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $fullname }}-jaeger
+  labels: {{- include "freshflow.labels" . | nindent 4 }}
+spec:
+  selector: {app.kubernetes.io/instance: {{ .Release.Name }}, app.kubernetes.io/component: jaeger}
+  ports:
+    - {name: otlp-grpc, port: 4317, targetPort: otlp-grpc}
+    - {name: ui, port: 16686, targetPort: ui}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $fullname }}-jaeger
+  labels:
+    {{- include "freshflow.labels" . | nindent 4 }}
+    app.kubernetes.io/component: jaeger
+spec:
+  replicas: 1
+  selector: {matchLabels: {app.kubernetes.io/instance: {{ .Release.Name }}, app.kubernetes.io/component: jaeger}}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/instance: {{ .Release.Name }}, app.kubernetes.io/component: jaeger}
+    spec:
+      containers:
+        - name: jaeger
+          image: {{ .Values.localDependencies.jaegerImage | quote }}
+          env: [{name: COLLECTOR_OTLP_ENABLED, value: "true"}]
+          ports:
+            - {name: otlp-grpc, containerPort: 4317}
+            - {name: ui, containerPort: 16686}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $fullname }}-kafka-init
+  labels: {{- include "freshflow.labels" . | nindent 4 }}
+spec:
+  backoffLimit: 8
+  template:
+    metadata:
+      labels: {app.kubernetes.io/instance: {{ .Release.Name }}, app.kubernetes.io/component: kafka-init}
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: kafka-init
+          image: {{ .Values.localDependencies.kafkaImage | quote }}
+          command: [/bin/bash, -ec]
+          args:
+            - |
+              until /opt/kafka/bin/kafka-topics.sh --bootstrap-server {{ $fullname }}-kafka:9092 --list >/dev/null 2>&1; do sleep 2; done
+              for topic in freshflow.order.events.v1 freshflow.inventory.events.v1 freshflow.delivery.events.v1 freshflow.courier.location.v1; do
+                /opt/kafka/bin/kafka-topics.sh --bootstrap-server {{ $fullname }}-kafka:9092 --create --if-not-exists --topic "$topic" --partitions 3 --replication-factor 1
+              done
+{{- end }}

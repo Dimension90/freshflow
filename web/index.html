@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="FreshFlow — доставка свежих продуктов с отслеживанием заказа и ETA." />
+    <meta name="theme-color" content="#101714" />
+    <title>FreshFlow — доставка продуктов</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Перейти к содержимому</a>
+    <header class="topbar">
+      <a class="brand" href="#catalog" aria-label="FreshFlow, каталог">
+        <span class="brand-mark" aria-hidden="true">F</span>
+        <span>FreshFlow</span>
+      </a>
+      <nav class="nav" aria-label="Основная навигация">
+        <a href="#catalog" data-nav="catalog">Каталог</a>
+        <a href="#order" data-nav="order">Заказ</a>
+        <a href="#analytics" data-nav="analytics">Аналитика</a>
+      </nav>
+      <div class="topbar-actions">
+        <span class="service-state" id="service-state"><i></i><span>Проверяем API</span></span>
+        <button class="cart-toggle" id="cart-toggle" type="button" aria-controls="cart-panel" aria-expanded="false">
+          Корзина <span id="cart-count">0</span>
+        </button>
+      </div>
+    </header>
+
+    <main id="main">
+      <section class="view" id="catalog-view" data-view="catalog">
+        <div class="shop-layout">
+          <div class="catalog-column">
+            <section class="hero" aria-labelledby="hero-title">
+              <img src="/assets/fresh-groceries.webp" alt="Свежие овощи, ягоды, хлеб и молоко" />
+              <div class="hero-shade"></div>
+              <div class="hero-copy">
+                <span class="eyebrow">Доставка по Новосибирску</span>
+                <h1 id="hero-title">Свежие продукты.<br />В понятные сроки.</h1>
+                <p>Соберём заказ и покажем движение курьера в реальном времени.</p>
+                <a class="hero-action" href="#products">Выбрать продукты <span aria-hidden="true">↓</span></a>
+              </div>
+            </section>
+
+            <section class="products-section" id="products" aria-labelledby="products-title">
+              <div class="section-heading">
+                <div>
+                  <span class="eyebrow dark">Каталог</span>
+                  <h2 id="products-title">Сегодня в наличии</h2>
+                </div>
+                <button class="quiet-button" id="refresh-catalog" type="button">Обновить</button>
+              </div>
+              <div class="notice hidden" id="catalog-notice" role="status"></div>
+              <div class="product-grid" id="product-grid" aria-live="polite"></div>
+            </section>
+          </div>
+
+          <aside class="cart-panel" id="cart-panel" aria-labelledby="cart-title">
+            <div class="cart-header">
+              <div>
+                <span class="eyebrow dark">Ваш заказ</span>
+                <h2 id="cart-title">Корзина</h2>
+              </div>
+              <button class="icon-button close-cart" id="close-cart" type="button" aria-label="Закрыть корзину">×</button>
+            </div>
+            <div id="cart-content"></div>
+          </aside>
+        </div>
+      </section>
+
+      <section class="view hidden" id="order-view" data-view="order" aria-labelledby="order-title">
+        <div class="page-shell">
+          <div class="page-heading">
+            <div>
+              <span class="eyebrow dark">Live tracking</span>
+              <h1 id="order-title">Статус заказа</h1>
+            </div>
+            <button class="quiet-button" id="refresh-order" type="button">Обновить</button>
+          </div>
+          <div class="notice hidden" id="order-notice" role="status"></div>
+          <div id="order-content"></div>
+        </div>
+      </section>
+
+      <section class="view hidden" id="analytics-view" data-view="analytics" aria-labelledby="analytics-title">
+        <div class="page-shell">
+          <div class="page-heading">
+            <div>
+              <span class="eyebrow dark">ClickHouse</span>
+              <h1 id="analytics-title">Операционная аналитика</h1>
+            </div>
+            <button class="quiet-button" id="refresh-analytics" type="button">Обновить</button>
+          </div>
+          <div class="notice hidden" id="analytics-notice" role="status"></div>
+          <div id="analytics-content"></div>
+        </div>
+      </section>
+    </main>
+
+    <div class="toast-region" id="toast-region" aria-live="polite"></div>
+    <div class="mobile-scrim" id="mobile-scrim"></div>
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

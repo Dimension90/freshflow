@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "delivery.completed v1 payload",
+  "type": "object",
+  "required": ["delivery_id", "order_id", "courier_id", "status", "changed_at", "assigned_at", "completed_at", "actual_eta_seconds"],
+  "properties": {
+    "delivery_id": {"type": "string", "format": "uuid"},
+    "order_id": {"type": "string", "format": "uuid"},
+    "courier_id": {"type": "string", "format": "uuid"},
+    "status": {"const": "completed"},
+    "changed_at": {"type": "string", "format": "date-time"},
+    "assigned_at": {"type": "string", "format": "date-time"},
+    "completed_at": {"type": "string", "format": "date-time"},
+    "actual_eta_seconds": {"type": "integer", "minimum": 0},
+    "predicted_eta_seconds": {"type": "integer", "minimum": 1},
+    "eta_model_version": {"type": "string"},
+    "on_time": {"type": "boolean"}
+  }
+}

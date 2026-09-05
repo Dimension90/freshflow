@@ -1,0 +1,56 @@
+{
+  "annotations": {"list": []},
+  "editable": true,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "type": "timeseries", "title": "HTTP requests / sec", "id": 1,
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"expr": "sum(rate(http_server_request_duration_seconds_count[5m])) by (service)", "legendFormat": "{{service}}", "refId": "A"}],
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0}
+    },
+    {
+      "type": "timeseries", "title": "HTTP p95 latency", "id": 2,
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []},
+      "targets": [{"expr": "histogram_quantile(0.95, sum(rate(http_server_request_duration_seconds_bucket[5m])) by (le, service))", "legendFormat": "{{service}}", "refId": "A"}],
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0}
+    },
+    {
+      "type": "timeseries", "title": "HTTP errors / sec", "id": 3,
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"expr": "sum(rate(http_server_errors_total[5m])) by (service)", "legendFormat": "{{service}}", "refId": "A"}],
+      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 8}
+    },
+    {
+      "type": "stat", "title": "Orders created", "id": 4,
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"expr": "sum(freshflow_orders_created_total)", "refId": "A"}],
+      "gridPos": {"h": 8, "w": 4, "x": 8, "y": 8}
+    },
+    {
+      "type": "timeseries", "title": "Kafka consumer lag", "id": 5,
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"expr": "max(freshflow_kafka_consumer_lag) by (service, topic)", "legendFormat": "{{service}} / {{topic}}", "refId": "A"}],
+      "gridPos": {"h": 8, "w": 6, "x": 12, "y": 8}
+    },
+    {
+      "type": "timeseries", "title": "ETA prediction p95", "id": 6,
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []},
+      "targets": [{"expr": "histogram_quantile(0.95, sum(rate(freshflow_eta_prediction_duration_seconds_bucket[5m])) by (le, caller))", "legendFormat": "{{caller}}", "refId": "A"}],
+      "gridPos": {"h": 8, "w": 6, "x": 18, "y": 8}
+    }
+  ],
+  "refresh": "5s",
+  "schemaVersion": 39,
+  "tags": ["freshflow", "backend", "logistics"],
+  "templating": {"list": []},
+  "time": {"from": "now-30m", "to": "now"},
+  "timezone": "browser",
+  "title": "FreshFlow Overview",
+  "uid": "freshflow-overview",
+  "version": 1
+}

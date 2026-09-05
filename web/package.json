@@ -1,0 +1,9 @@
+{
+  "name": "@freshflow/web",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/*.test.js",
+    "check": "node --check app.js && node --check api.js && node --check format.js"
+  }
+}

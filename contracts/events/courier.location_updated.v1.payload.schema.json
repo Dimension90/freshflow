@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "courier.location_updated v1 payload",
+  "type": "object",
+  "required": ["courier_id", "latitude", "longitude", "heading_degrees", "speed_mps", "recorded_at", "sequence", "phase"],
+  "properties": {
+    "courier_id": {"type": "string", "format": "uuid"},
+    "delivery_id": {"type": "string", "format": "uuid"},
+    "latitude": {"type": "number", "minimum": -90, "maximum": 90},
+    "longitude": {"type": "number", "minimum": -180, "maximum": 180},
+    "heading_degrees": {"type": "number", "minimum": 0, "maximum": 360},
+    "speed_mps": {"type": "number", "minimum": 0},
+    "recorded_at": {"type": "string", "format": "date-time"},
+    "sequence": {"type": "integer", "minimum": 1},
+    "phase": {"type": "string", "enum": ["available", "assembling", "delivering", "completed"]}
+  }
+}
+

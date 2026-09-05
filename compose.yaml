@@ -1,0 +1,484 @@
+name: freshflow
+
+x-observability-env: &observability-env
+  FRESHFLOW_OTEL_EXPORTER_OTLP_ENDPOINT: jaeger:4317
+  FRESHFLOW_OTEL_SAMPLE_RATIO: "1"
+
+services:
+  postgres:
+    image: postgres:16.4-alpine3.20
+    environment:
+      POSTGRES_DB: freshflow
+      POSTGRES_USER: freshflow
+      POSTGRES_PASSWORD: freshflow
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U freshflow -d freshflow"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+    restart: unless-stopped
+
+  postgres-migrate:
+    image: migrate/migrate:v4.17.1
+    volumes:
+      - ./db/postgres/migrations:/migrations:ro
+    command:
+      - -path=/migrations
+      - -database=postgres://freshflow:freshflow@postgres:5432/freshflow?sslmode=disable
+      - up
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  redis:
+    image: redis:7.4.0-alpine3.20
+    command: ["redis-server", "--appendonly", "yes", "--save", "60", "1"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:26.6.2.160-alpine
+    environment:
+      CLICKHOUSE_DB: freshflow
+      CLICKHOUSE_USER: freshflow
+      CLICKHOUSE_PASSWORD: freshflow
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
+    ports:
+      - "8123:8123"
+      - "9000:9000"
+    volumes:
+      - clickhouse-data:/var/lib/clickhouse
+    healthcheck:
+      test: ["CMD-SHELL", "clickhouse-client --user freshflow --password freshflow --query 'SELECT 1' >/dev/null"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+      start_period: 10s
+    restart: unless-stopped
+
+  clickhouse-migrate:
+    image: clickhouse/clickhouse-server:26.6.2.160-alpine
+    volumes:
+      - ./db/clickhouse/migrations:/migrations:ro
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        for file in /migrations/*.sql; do
+          clickhouse-client --host clickhouse --user freshflow --password freshflow \
+            --database freshflow --multiquery < "$${file}"
+        done
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+    restart: "no"
+
+  kafka:
+    image: apache/kafka:3.8.0
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: INTERNAL://:29092,CONTROLLER://:29093,EXTERNAL://:9092
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:29092,EXTERNAL://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:29093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_NUM_PARTITIONS: 3
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+    ports:
+      - "9092:9092"
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    restart: unless-stopped
+
+  kafka-init:
+    image: apache/kafka:3.8.0
+    depends_on:
+      kafka:
+        condition: service_healthy
+    entrypoint: ["/bin/bash", "-ec"]
+    command:
+      - |
+        for topic in \
+          freshflow.order.events.v1 \
+          freshflow.inventory.events.v1 \
+          freshflow.delivery.events.v1 \
+          freshflow.courier.location.v1; do
+          /opt/kafka/bin/kafka-topics.sh \
+            --bootstrap-server kafka:29092 \
+            --create --if-not-exists \
+            --topic "$${topic}" \
+            --partitions 3 \
+            --replication-factor 1
+        done
+    restart: "no"
+
+  api-gateway:
+    build:
+      context: .
+      dockerfile: services/api-gateway/Dockerfile
+    environment:
+      <<: *observability-env
+      FRESHFLOW_ENV: local-compose
+      FRESHFLOW_LOG_LEVEL: info
+      FRESHFLOW_HTTP_ADDR: :8080
+      FRESHFLOW_POSTGRES_DSN: postgres://freshflow:freshflow@postgres:5432/freshflow?sslmode=disable
+      FRESHFLOW_REDIS_ADDR: redis:6379
+      FRESHFLOW_KAFKA_BROKERS: kafka:29092
+      FRESHFLOW_CATALOG_SERVICE_URL: http://catalog-service:8081
+      FRESHFLOW_CART_SERVICE_URL: http://cart-service:8082
+      FRESHFLOW_ORDER_SERVICE_URL: http://order-service:8083
+      FRESHFLOW_DELIVERY_SERVICE_URL: http://delivery-service:8084
+      FRESHFLOW_ANALYTICS_SERVICE_URL: http://analytics-worker:8087
+      FRESHFLOW_STARTUP_TIMEOUT: 30s
+      FRESHFLOW_DEPENDENCY_CHECK_TIMEOUT: 2s
+      FRESHFLOW_SHUTDOWN_TIMEOUT: 10s
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      postgres-migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+      catalog-service:
+        condition: service_healthy
+      cart-service:
+        condition: service_healthy
+      order-service:
+        condition: service_healthy
+      delivery-service:
+        condition: service_healthy
+      analytics-worker:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--spider", "http://localhost:8080/readyz"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    init: true
+    restart: unless-stopped
+
+  swagger-ui:
+    image: swaggerapi/swagger-ui:v5.17.14
+    environment:
+      SWAGGER_JSON: /spec/freshflow.yaml
+    volumes:
+      - ./contracts/openapi/freshflow.yaml:/spec/freshflow.yaml:ro
+    ports:
+      - "8088:8080"
+    depends_on:
+      api-gateway:
+        condition: service_healthy
+    restart: unless-stopped
+
+  web:
+    build:
+      context: .
+      dockerfile: web/Dockerfile
+    ports:
+      - "8089:8080"
+    environment:
+      FRESHFLOW_API_GATEWAY_UPSTREAM: api-gateway:8080
+    depends_on:
+      api-gateway:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--spider", "http://127.0.0.1:8080/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 3s
+    init: true
+    restart: unless-stopped
+
+  catalog-service:
+    build:
+      context: .
+      dockerfile: build/package/Dockerfile.go-service
+      args:
+        SERVICE: catalog-service
+    environment:
+      <<: *observability-env
+      FRESHFLOW_ENV: local-compose
+      FRESHFLOW_HTTP_ADDR: :8081
+      FRESHFLOW_POSTGRES_DSN: postgres://freshflow:freshflow@postgres:5432/freshflow?sslmode=disable
+      FRESHFLOW_REDIS_ADDR: redis:6379
+      FRESHFLOW_KAFKA_BROKERS: kafka:29092
+    depends_on:
+      postgres-migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--spider", "http://localhost:8081/readyz"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  cart-service:
+    build:
+      context: .
+      dockerfile: build/package/Dockerfile.go-service
+      args:
+        SERVICE: cart-service
+    environment:
+      <<: *observability-env
+      FRESHFLOW_ENV: local-compose
+      FRESHFLOW_HTTP_ADDR: :8082
+      FRESHFLOW_POSTGRES_DSN: postgres://freshflow:freshflow@postgres:5432/freshflow?sslmode=disable
+      FRESHFLOW_REDIS_ADDR: redis:6379
+    depends_on:
+      postgres-migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--spider", "http://localhost:8082/readyz"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  order-service:
+    build:
+      context: .
+      dockerfile: build/package/Dockerfile.go-service
+      args:
+        SERVICE: order-service
+    environment:
+      <<: *observability-env
+      FRESHFLOW_ENV: local-compose
+      FRESHFLOW_HTTP_ADDR: :8083
+      FRESHFLOW_POSTGRES_DSN: postgres://freshflow:freshflow@postgres:5432/freshflow?sslmode=disable
+      FRESHFLOW_CART_SERVICE_URL: http://cart-service:8082
+      FRESHFLOW_CATALOG_SERVICE_URL: http://catalog-service:8081
+      FRESHFLOW_KAFKA_BROKERS: kafka:29092
+      FRESHFLOW_KAFKA_GROUP: freshflow.order-service.v1
+    depends_on:
+      postgres-migrate:
+        condition: service_completed_successfully
+      cart-service:
+        condition: service_healthy
+      catalog-service:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--spider", "http://localhost:8083/readyz"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  notification-worker:
+    build:
+      context: .
+      dockerfile: build/package/Dockerfile.go-service
+      args:
+        SERVICE: notification-worker
+    environment:
+      <<: *observability-env
+      FRESHFLOW_ENV: local-compose
+      FRESHFLOW_HTTP_ADDR: :8086
+      FRESHFLOW_POSTGRES_DSN: postgres://freshflow:freshflow@postgres:5432/freshflow?sslmode=disable
+      FRESHFLOW_KAFKA_BROKERS: kafka:29092
+      FRESHFLOW_KAFKA_GROUP: freshflow.notification-worker.v1
+    depends_on:
+      postgres-migrate:
+        condition: service_completed_successfully
+      kafka-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--spider", "http://localhost:8086/readyz"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  delivery-service:
+    build:
+      context: .
+      dockerfile: build/package/Dockerfile.go-service
+      args:
+        SERVICE: delivery-service
+    environment:
+      <<: *observability-env
+      FRESHFLOW_ENV: local-compose
+      FRESHFLOW_HTTP_ADDR: :8084
+      FRESHFLOW_POSTGRES_DSN: postgres://freshflow:freshflow@postgres:5432/freshflow?sslmode=disable
+      FRESHFLOW_REDIS_ADDR: redis:6379
+      FRESHFLOW_KAFKA_BROKERS: kafka:29092
+      FRESHFLOW_KAFKA_GROUP: freshflow.delivery-service.v1
+      FRESHFLOW_ETA_SERVICE_URL: http://eta-service:8090
+    depends_on:
+      postgres-migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+      eta-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--spider", "http://localhost:8084/readyz"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  eta-service:
+    build:
+      context: .
+      dockerfile: ml/eta-service/Dockerfile
+    environment:
+      FRESHFLOW_ENV: local-compose
+      FRESHFLOW_OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317
+    ports:
+      - "8090:8090"
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--spider", "http://127.0.0.1:8090/readyz"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    restart: unless-stopped
+
+  courier-simulator:
+    build:
+      context: .
+      dockerfile: build/package/Dockerfile.go-service
+      args:
+        SERVICE: courier-simulator
+    environment:
+      <<: *observability-env
+      FRESHFLOW_ENV: local-compose
+      FRESHFLOW_HTTP_ADDR: :8085
+      FRESHFLOW_REDIS_ADDR: redis:6379
+      FRESHFLOW_KAFKA_BROKERS: kafka:29092
+      FRESHFLOW_DELIVERY_SERVICE_URL: http://delivery-service:8084
+    depends_on:
+      delivery-service:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--spider", "http://localhost:8085/readyz"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  analytics-worker:
+    build:
+      context: .
+      dockerfile: build/package/Dockerfile.go-service
+      args:
+        SERVICE: analytics-worker
+    environment:
+      <<: *observability-env
+      FRESHFLOW_ENV: local-compose
+      FRESHFLOW_HTTP_ADDR: :8087
+      FRESHFLOW_CLICKHOUSE_ADDR: clickhouse:9000
+      FRESHFLOW_CLICKHOUSE_DATABASE: freshflow
+      FRESHFLOW_CLICKHOUSE_USER: freshflow
+      FRESHFLOW_CLICKHOUSE_PASSWORD: freshflow
+      FRESHFLOW_KAFKA_BROKERS: kafka:29092
+      FRESHFLOW_KAFKA_GROUP: freshflow.analytics-worker.v1
+    ports:
+      - "8087:8087"
+    depends_on:
+      clickhouse-migrate:
+        condition: service_completed_successfully
+      kafka-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--spider", "http://localhost:8087/readyz"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.62.0
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+      LOG_LEVEL: info
+    ports:
+      - "4317:4317"
+      - "4318:4318"
+      - "16686:16686"
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --web.enable-lifecycle
+    volumes:
+      - ./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./observability/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "9090:9090"
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:11.3.1
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: freshflow
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
+  redis-data:
+  kafka-data:
+  clickhouse-data:
+  prometheus-data:
+  grafana-data:

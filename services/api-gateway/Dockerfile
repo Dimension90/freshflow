@@ -1,0 +1,19 @@
+# syntax=docker/dockerfile:1.7
+FROM golang:1.23.4-alpine3.20 AS build
+
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN --mount=type=cache,target=/go/pkg/mod go mod download
+
+COPY pkg ./pkg
+COPY services/api-gateway ./services/api-gateway
+RUN --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" \
+    -o /out/api-gateway ./services/api-gateway/cmd/api-gateway
+
+FROM alpine:3.20.3
+RUN addgroup -S freshflow && adduser -S -G freshflow freshflow
+COPY --from=build /out/api-gateway /usr/local/bin/api-gateway
+USER freshflow
+EXPOSE 8080
+ENTRYPOINT ["/usr/local/bin/api-gateway"]

@@ -1,0 +1,6 @@
+FROM clickhouse/clickhouse-server:26.6.2.160-alpine
+
+COPY db/clickhouse/migrations /migrations
+COPY build/migrations/clickhouse-entrypoint.sh /usr/local/bin/clickhouse-migrate
+RUN chmod +x /usr/local/bin/clickhouse-migrate
+ENTRYPOINT ["/usr/local/bin/clickhouse-migrate"]

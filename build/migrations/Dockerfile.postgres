@@ -1,0 +1,9 @@
+# syntax=docker/dockerfile:1.7
+FROM migrate/migrate:v4.17.1 AS migrate
+
+FROM alpine:3.20.3
+COPY --from=migrate /usr/local/bin/migrate /usr/local/bin/migrate
+COPY db/postgres/migrations /migrations
+COPY build/migrations/postgres-entrypoint.sh /usr/local/bin/postgres-migrate
+RUN chmod +x /usr/local/bin/postgres-migrate
+ENTRYPOINT ["/usr/local/bin/postgres-migrate"]

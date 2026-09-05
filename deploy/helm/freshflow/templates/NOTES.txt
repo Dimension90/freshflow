@@ -1,0 +1,6 @@
+FreshFlow has been installed locally.
+
+Use port-forward to open the web UI:
+  kubectl -n {{ .Release.Namespace }} port-forward service/{{ include "freshflow.fullname" . }}-web 8089:80
+
+Then open http://localhost:8089.

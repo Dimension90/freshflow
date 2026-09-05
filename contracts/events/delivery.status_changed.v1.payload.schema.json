@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "delivery.status_changed v1 payload",
+  "type": "object",
+  "required": ["delivery_id", "order_id", "courier_id", "status", "changed_at"],
+  "properties": {
+    "delivery_id": {"type": "string", "format": "uuid"},
+    "order_id": {"type": "string", "format": "uuid"},
+    "courier_id": {"type": "string", "format": "uuid"},
+    "status": {"type": "string", "enum": ["assembling", "delivering"]},
+    "changed_at": {"type": "string", "format": "date-time"}
+  }
+}
+

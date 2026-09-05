@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "order.status_changed v1 payload",
+  "type": "object",
+  "required": ["order_id", "previous_status", "new_status", "changed_at"],
+  "properties": {
+    "order_id": {"type": "string", "format": "uuid"},
+    "previous_status": {"type": "string"},
+    "new_status": {"type": "string"},
+    "changed_at": {"type": "string", "format": "date-time"}
+  }
+}

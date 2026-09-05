@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://freshflow.local/schemas/events/inventory.reservation_failed.v1.payload.schema.json",
+  "title": "inventory.reservation_failed v1 payload",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["checkout_attempt_id", "reservation_id", "shortages", "failed_at"],
+  "properties": {
+    "checkout_attempt_id": {"type": "string", "format": "uuid"},
+    "reservation_id": {"type": "string", "format": "uuid"},
+    "shortages": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["product_id", "requested", "available"],
+        "properties": {
+          "product_id": {"type": "string", "format": "uuid"},
+          "requested": {"type": "integer", "minimum": 1},
+          "available": {"type": "integer", "minimum": 0}
+        }
+      }
+    },
+    "failed_at": {"type": "string", "format": "date-time"}
+  }
+}

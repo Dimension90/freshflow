@@ -1,0 +1,120 @@
+{{- range $app := .Values.apps }}
+{{- $root := $ }}
+{{- if ne $app.name "web" }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "freshflow.componentName" (dict "root" $root "component" $app.name) }}
+  labels:
+    {{- include "freshflow.labels" $root | nindent 4 }}
+    app.kubernetes.io/component: {{ $app.name }}
+spec:
+  selector:
+    app.kubernetes.io/instance: {{ $root.Release.Name }}
+    app.kubernetes.io/component: {{ $app.name }}
+  ports:
+    - name: http
+      port: {{ $app.port }}
+      targetPort: http
+{{- else }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "freshflow.componentName" (dict "root" $root "component" $app.name) }}
+  labels:
+    {{- include "freshflow.labels" $root | nindent 4 }}
+    app.kubernetes.io/component: {{ $app.name }}
+spec:
+  selector:
+    app.kubernetes.io/instance: {{ $root.Release.Name }}
+    app.kubernetes.io/component: {{ $app.name }}
+  ports:
+    - name: http
+      port: {{ default $app.port $app.servicePort }}
+      targetPort: http
+{{- end }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "freshflow.componentName" (dict "root" $root "component" $app.name) }}
+  labels:
+    {{- include "freshflow.labels" $root | nindent 4 }}
+    app.kubernetes.io/component: {{ $app.name }}
+spec:
+  replicas: {{ $app.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ $root.Release.Name }}
+      app.kubernetes.io/component: {{ $app.name }}
+  template:
+    metadata:
+      labels:
+        {{- include "freshflow.labels" $root | nindent 8 }}
+        app.kubernetes.io/component: {{ $app.name }}
+      annotations:
+        prometheus.io/scrape: {{ ternary "true" "false" (ne $app.name "web") | quote }}
+        prometheus.io/port: {{ $app.port | quote }}
+        prometheus.io/path: /metrics
+    spec:
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: {{ $app.name }}
+          image: {{ index $root.Values.images $app.image | quote }}
+          imagePullPolicy: {{ $root.Values.imagePullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ $app.port }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "freshflow.fullname" $root }}-runtime
+            - secretRef:
+                name: {{ include "freshflow.fullname" $root }}-runtime
+          env:
+            - name: FRESHFLOW_HTTP_ADDR
+              value: {{ printf ":%v" $app.port | quote }}
+          resources:
+            {{- toYaml $app.resources | nindent 12 }}
+          {{- if ne $app.name "web" }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+          {{- end }}
+          readinessProbe:
+            httpGet: {path: {{ $app.healthPath }}, port: http}
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 12
+          livenessProbe:
+            httpGet: {path: /healthz, port: http}
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+{{- end }}
+---
+# Stable local alias consumed by the nginx image. The namespaced release service
+# above remains the canonical service for other in-cluster clients.
+apiVersion: v1
+kind: Service
+metadata:
+  name: api-gateway
+  labels:
+    {{- include "freshflow.labels" . | nindent 4 }}
+    app.kubernetes.io/component: api-gateway
+spec:
+  selector:
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: api-gateway
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
