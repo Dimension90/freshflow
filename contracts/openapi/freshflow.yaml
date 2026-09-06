@@ -2,9 +2,14 @@ openapi: 3.1.0
 info:
   title: FreshFlow API
   version: 0.4.0
+  license:
+    name: UNLICENSED
+    identifier: LicenseRef-UNLICENSED
   description: Catalog, cart, idempotent checkout, delivery and ClickHouse analytics API exposed by api-gateway.
 servers:
   - url: http://localhost:8080
+# FreshFlow is intentionally public in the local demo: authentication is out of scope.
+security: []
 paths:
   /healthz:
     get:
@@ -307,7 +312,7 @@ paths:
                 type: object
                 required: [on_time_ratio]
                 properties:
-                  on_time_ratio: {type: number, nullable: true, minimum: 0, maximum: 1}
+                  on_time_ratio: {type: [number, "null"], minimum: 0, maximum: 1}
   /api/v1/analytics/cancellations:
     get:
       operationId: getCancellationCount
@@ -501,9 +506,9 @@ components:
         latitude: {type: number}
         longitude: {type: number}
         last_seen_at: {type: string, format: date-time}
-        active_delivery_id: {type: string, format: uuid, nullable: true}
-        active_order_id: {type: string, format: uuid, nullable: true}
-        delivery_status: {type: string, nullable: true}
+        active_delivery_id: {type: [string, "null"], format: uuid}
+        active_order_id: {type: [string, "null"], format: uuid}
+        delivery_status: {type: [string, "null"]}
     AnalyticsSummary:
       type: object
       required: [orders_by_hour, eta, cancellations, popular_products, status_durations]
@@ -512,7 +517,7 @@ components:
           type: array
           items: {$ref: "#/components/schemas/HourBucket"}
         eta: {$ref: "#/components/schemas/ETAStats"}
-        on_time_ratio: {type: number, nullable: true, minimum: 0, maximum: 1}
+        on_time_ratio: {type: [number, "null"], minimum: 0, maximum: 1}
         cancellations: {type: integer, minimum: 0}
         popular_products:
           type: array
@@ -529,8 +534,8 @@ components:
     ETAStats:
       type: object
       properties:
-        average_predicted_eta_seconds: {type: number, nullable: true}
-        average_actual_eta_seconds: {type: number, nullable: true}
+        average_predicted_eta_seconds: {type: [number, "null"]}
+        average_actual_eta_seconds: {type: [number, "null"]}
     ETARequest:
       type: object
       additionalProperties: false

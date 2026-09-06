@@ -17,7 +17,7 @@ FreshFlow — production-like учебная платформа доставки
 | 5 | Delivery service и courier simulator | ✅ код и тесты; full-stack smoke ожидает доступ к Docker daemon |
 | 6 | ClickHouse analytics worker | ✅ код и тесты; full-stack smoke ожидает доступ к Docker daemon |
 | 7 | Python/FastAPI ETA service | ✅ baseline, хранение прогнозов и evaluation labels; container smoke ожидает Docker daemon |
-| 8 | Prometheus, Grafana, OpenTelemetry и Jaeger | ✅ метрики, dashboard и сквозные traces; container smoke ожидает Docker daemon |
+| 8 | Prometheus, Grafana, OpenTelemetry и Jaeger | ✅ SLO/alerts, dashboard и сквозные traces; container smoke ожидает Docker daemon |
 | 9 | Web UI | ✅ каталог, корзина, checkout, live tracking и аналитика; container smoke ожидает Docker daemon |
 | 10 | Helm chart и локальный Kubernetes | ✅ chart, local dependencies, migration Jobs, HPA и kind/k3d runbook; cluster smoke зависит от локально установленных Helm/kind/k3d |
 
@@ -235,7 +235,7 @@ ETA = travel_time(distance, stage)
 
 OpenTelemetry создаёт server/client spans, передаёт W3C `traceparent` по HTTP и сохраняет `trace_id`/`span_id` в event envelope. Kafka consumer продолжает trace от originating span; delivery хранит исходный context, чтобы stage recovery и ETA HTTP-вызов оставались в trace оформления заказа. Локально spans отправляются OTLP/gRPC напрямую в Jaeger. Correlation ID удобен для пользовательского поиска, trace ID — для причинно-следственного пути. В метриках нет `order_id`, `user_id` и других high-cardinality labels.
 
-Provisioned Grafana dashboard содержит request rate, gateway p95, **5xx-only** availability SLO, число созданных заказов, Kafka lag, ETA p95, on-time delivery ratio и freshness analytics-проекции. Prometheus recording rules и Grafana-managed alerts описаны в [operations guide](docs/operations.md): ожидаемый `404` поиска ещё не назначенной доставки остаётся diagnostic signal, но не расходует availability SLO и не вызывает alert.
+Provisioned Grafana dashboard содержит request rate, gateway p95, **5xx-only** availability SLO, число созданных заказов, Kafka lag, ETA p95, on-time delivery ratio и freshness analytics-проекции. Grafana оценивает alerts для 5xx, p95, общего Kafka lag, backlog/freshness analytics-worker и on-time delivery (последний — только при выборке от 10 завершённых доставок). Prometheus recording rules и Grafana-managed alerts описаны в [operations guide](docs/operations.md): ожидаемый `404` поиска ещё не назначенной доставки остаётся diagnostic signal, но не расходует availability SLO и не вызывает alert.
 
 ## Web UI
 
@@ -314,7 +314,16 @@ Workflow [`.github/workflows/ci.yml`](.github/workflows/ci.yml) запускае
 `main`, pull request и вручную. Он проверяет Go, FastAPI ETA service, frontend,
 Compose-конфигурацию, OpenAPI и Helm; затем поднимает весь Compose stack,
 выполняет smoke/integration checks и короткий k6 run. При сбое end-to-end job
-сохраняет логи Compose как artifact.
+сохраняет логи Compose как artifact. Actions используют Node 24-совместимые
+версии, поэтому GitHub-hosted runner не выдаёт предупреждение о deprecated
+Node 20 runtime.
+
+OpenAPI описывает публичное demo API через явный `security: []`: авторизация
+намеренно не входит в scope проекта. Контракт использует OpenAPI 3.1 union types
+для nullable-полей. [`.redocly.yaml`](.redocly.yaml) сохраняет строгую schema
+валидацию в CI, но отключает две нерелевантные для локального Compose-демо
+эвристики: `localhost` server URL и обязательный 4xx для read-only/streaming
+операций.
 
 Полный локальный k6-сценарий:
 

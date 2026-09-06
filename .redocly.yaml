@@ -1,0 +1,10 @@
+extends:
+  - recommended
+
+rules:
+  # The contract is executable in Docker Compose and Swagger UI, so local
+  # endpoints are intentional rather than production deployment URLs.
+  no-server-example.com: off
+  # Read-only health, streaming and aggregate endpoints can validly have no
+  # client-error response. Service failures remain documented as 503.
+  operation-4xx-response: off
