@@ -36,7 +36,10 @@ var (
 	kafkaLag = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "freshflow_kafka_consumer_lag", Help: "Approximate Kafka consumer lag at the last processed record.",
 	}, []string{"service", "topic", "partition"})
-	etaDuration = prometheus.NewHistogramVec(prometheus.HistogramOpts{
+	kafkaRetries            = prometheus.NewCounterVec(prometheus.CounterOpts{Name: "freshflow_kafka_consumer_retries_total", Help: "Kafka handler retry attempts."}, []string{"service", "topic"})
+	kafkaDeadLetters        = prometheus.NewCounterVec(prometheus.CounterOpts{Name: "freshflow_kafka_dead_lettered_total", Help: "Kafka records successfully written to a DLQ."}, []string{"service", "topic"})
+	kafkaDLQPublishFailures = prometheus.NewCounterVec(prometheus.CounterOpts{Name: "freshflow_kafka_dlq_publish_failures_total", Help: "Failed attempts to write a Kafka record to a DLQ."}, []string{"service", "topic"})
+	etaDuration             = prometheus.NewHistogramVec(prometheus.HistogramOpts{
 		Name: "freshflow_eta_prediction_duration_seconds", Help: "ETA prediction request duration.",
 		Buckets: prometheus.DefBuckets,
 	}, []string{"caller", "status"})
@@ -57,7 +60,7 @@ var (
 
 func init() {
 	prometheus.MustRegister(httpDuration, httpErrors, ordersCreated, kafkaLag, etaDuration,
-		analyticsProjectionLag, deliveryOnTimeRatio, deliveryCompletedWindow)
+		analyticsProjectionLag, deliveryOnTimeRatio, deliveryCompletedWindow, kafkaRetries, kafkaDeadLetters, kafkaDLQPublishFailures)
 }
 
 func Init(ctx context.Context, service, environment string, logger *slog.Logger) error {
@@ -124,6 +127,14 @@ func ObserveKafkaFetches(service string, fetches kgo.Fetches) {
 		last := partition.Records[len(partition.Records)-1]
 		ObserveKafkaRecord(service, partition.Topic, partition.Partition, last.Offset, partition.HighWatermark)
 	})
+}
+
+func IncKafkaRetry(service, topic string) { kafkaRetries.WithLabelValues(service, topic).Inc() }
+func IncKafkaDeadLetter(service, topic string) {
+	kafkaDeadLetters.WithLabelValues(service, topic).Inc()
+}
+func IncKafkaDLQPublishFailure(service, topic string) {
+	kafkaDLQPublishFailures.WithLabelValues(service, topic).Inc()
 }
 
 func ObserveETAPrediction(caller, status string, duration time.Duration) {

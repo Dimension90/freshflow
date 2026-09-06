@@ -5,10 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"time"
 
 	"github.com/freshflow/freshflow/pkg/platform/events"
 	"github.com/freshflow/freshflow/pkg/platform/httpx"
+	"github.com/freshflow/freshflow/pkg/platform/kafkax"
 	"github.com/freshflow/freshflow/pkg/platform/telemetry"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -35,20 +35,17 @@ func (c *Consumer) Run(ctx context.Context) {
 			continue
 		}
 		for _, record := range fetches.Records() {
-			for {
-				processed, err := c.handle(ctx, record.Value)
-				if err == nil {
-					if processed {
-						c.logger.Info("mock notification recorded", "topic", record.Topic, "partition", record.Partition, "offset", record.Offset)
-					}
-					break
-				}
-				c.logger.Warn("process Kafka event; partition is paused by retry", "topic", record.Topic, "partition", record.Partition, "offset", record.Offset, "error", err)
-				select {
-				case <-ctx.Done():
-					return
-				case <-time.After(time.Second):
-				}
+			processed := false
+			outcome, err := kafkax.Process(ctx, "notification-worker", c.kafka, record, c.logger, func(callCtx context.Context) error {
+				var handleErr error
+				processed, handleErr = c.handle(callCtx, record.Value)
+				return handleErr
+			})
+			if err != nil {
+				return
+			}
+			if processed && outcome == kafkax.Processed {
+				c.logger.Info("mock notification recorded", "topic", record.Topic, "partition", record.Partition, "offset", record.Offset)
 			}
 			if err := c.kafka.CommitRecords(ctx, record); err != nil && ctx.Err() == nil {
 				c.logger.Warn("commit Kafka offset", "error", err, "topic", record.Topic, "partition", record.Partition, "offset", record.Offset)

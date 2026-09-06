@@ -9,6 +9,7 @@ import (
 
 	"github.com/freshflow/freshflow/pkg/platform/events"
 	"github.com/freshflow/freshflow/pkg/platform/httpx"
+	"github.com/freshflow/freshflow/pkg/platform/kafkax"
 	"github.com/freshflow/freshflow/pkg/platform/outbox"
 	"github.com/freshflow/freshflow/pkg/platform/telemetry"
 	"github.com/jackc/pgx/v5"
@@ -36,17 +37,10 @@ func (c *EventConsumer) Run(ctx context.Context) {
 			continue
 		}
 		for _, record := range fetches.Records() {
-			for {
-				if err := c.handle(ctx, record.Value); err == nil {
-					break
-				} else {
-					c.logger.Warn("process delivery event; retrying", "error", err, "partition", record.Partition, "offset", record.Offset)
-				}
-				select {
-				case <-ctx.Done():
-					return
-				case <-time.After(time.Second):
-				}
+			if _, err := kafkax.Process(ctx, "order-service", c.kafka, record, c.logger, func(callCtx context.Context) error {
+				return c.handle(callCtx, record.Value)
+			}); err != nil {
+				return
 			}
 			if err := c.kafka.CommitRecords(ctx, record); err != nil && ctx.Err() == nil {
 				c.logger.Warn("commit delivery event offset", "error", err)

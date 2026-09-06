@@ -9,6 +9,7 @@ import (
 
 	"github.com/freshflow/freshflow/pkg/platform/events"
 	"github.com/freshflow/freshflow/pkg/platform/httpx"
+	"github.com/freshflow/freshflow/pkg/platform/kafkax"
 	"github.com/freshflow/freshflow/pkg/platform/telemetry"
 	"github.com/twmb/franz-go/pkg/kgo"
 )
@@ -37,18 +38,10 @@ func (c *Consumer) Run(ctx context.Context) {
 			continue
 		}
 		for _, record := range fetches.Records() {
-			for {
-				err := c.handle(ctx, record.Value)
-				if err == nil {
-					break
-				}
-				c.logger.Warn("project Kafka event; partition paused by retry", "topic", record.Topic,
-					"partition", record.Partition, "offset", record.Offset, "error", err)
-				select {
-				case <-ctx.Done():
-					return
-				case <-time.After(time.Second):
-				}
+			if _, err := kafkax.Process(ctx, "analytics-worker", c.kafka, record, c.logger, func(callCtx context.Context) error {
+				return c.handle(callCtx, record.Value)
+			}); err != nil {
+				return
 			}
 			if err := c.kafka.CommitRecords(ctx, record); err != nil && ctx.Err() == nil {
 				c.logger.Warn("commit Kafka offset", "error", err, "topic", record.Topic,

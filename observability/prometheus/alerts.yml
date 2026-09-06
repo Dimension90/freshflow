@@ -40,6 +40,13 @@ groups:
         annotations:
           summary: Kafka consumer lag is above 100 records
           runbook: Inspect the affected consumer logs, Kafka topic throughput, and downstream dependency health.
+      - alert: FreshFlowKafkaDeadLettered
+        expr: sum(increase(freshflow_kafka_dead_lettered_total[5m])) by (service, topic) > 0
+        for: 1m
+        labels: {severity: warning}
+        annotations:
+          summary: A Kafka record was moved to a DLQ
+          runbook: Inspect the DLQ payload and consumer error, fix the root cause, then replay explicitly; do not automatically republish poison messages.
       - alert: FreshFlowAnalyticsWorkerLag
         expr: freshflow:analytics_worker_kafka_lag:max > 100
         for: 2m

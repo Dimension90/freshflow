@@ -76,6 +76,13 @@
       "datasource": {"type": "prometheus", "uid": "prometheus"},
       "targets": [{"expr": "sum(rate(http_server_request_duration_seconds_count{service=\"delivery-service\",route=\"GET /internal/v1/deliveries/order/{orderID}\",status=\"404\"}[5m]))", "legendFormat": "expected delivery lookup 404/s", "refId": "A"}],
       "gridPos": {"h": 8, "w": 12, "x": 0, "y": 24}
+    },
+    {
+      "type": "timeseries", "title": "Kafka records sent to DLQ (5m)", "id": 12,
+      "description": "A non-zero value means a consumer exhausted three bounded retries and committed the source offset only after publishing the original record to its DLQ.",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"expr": "sum(increase(freshflow_kafka_dead_lettered_total[5m])) by (service, topic)", "legendFormat": "{{service}} / {{topic}}", "refId": "A"}],
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 24}
     }
   ],
   "refresh": "5s",

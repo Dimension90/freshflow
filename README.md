@@ -4,22 +4,21 @@ FreshFlow — production-like учебная платформа доставки
 
 Главный принцип: каждая технология решает конкретную эксплуатационную задачу. В проекте нет реальной оплаты, внешних карт, облачных сервисов, OAuth, email или SMS.
 
-## Статус
+## Что реализовано
 
-Базовый план завершён. Поверх него добавлен реалистичный lifecycle доставки: отмена до начала сборки, компенсация товарного резерва, освобождение курьера и SSE-потоки статуса/координат для UI. Go/frontend-тесты, Python syntax/model smoke, сборка и статическая проверка Compose выполнены.
+Базовый план завершён. FreshFlow моделирует полный lifecycle доставки, включая отмену до начала сборки, компенсацию товарного резерва, освобождение курьера и SSE-потоки статуса/координат для UI.
 
-| Этап | Результат | Статус |
-|---|---|---|
-| 1 | Monorepo, архитектура, границы данных и событий | ✅ |
-| 2 | PostgreSQL, Redis, Kafka и базовый Go API в Docker Compose | 🟡 Реализовано; full-stack smoke ожидает доступ к Docker daemon |
-| 3 | Каталог, корзина и создание заказа | ✅ код и тесты; full-stack smoke ожидает доступ к Docker daemon |
-| 4 | Transactional outbox и Kafka-события | ✅ код и тесты; full-stack smoke ожидает доступ к Docker daemon |
-| 5 | Delivery service и courier simulator | ✅ код и тесты; full-stack smoke ожидает доступ к Docker daemon |
-| 6 | ClickHouse analytics worker | ✅ код и тесты; full-stack smoke ожидает доступ к Docker daemon |
-| 7 | Python/FastAPI ETA service | ✅ baseline, хранение прогнозов и evaluation labels; container smoke ожидает Docker daemon |
-| 8 | Prometheus, Grafana, OpenTelemetry и Jaeger | ✅ SLO/alerts, dashboard и сквозные traces; container smoke ожидает Docker daemon |
-| 9 | Web UI | ✅ каталог, корзина, checkout, live tracking и аналитика; container smoke ожидает Docker daemon |
-| 10 | Helm chart и локальный Kubernetes | ✅ chart, local dependencies, migration Jobs, HPA и kind/k3d runbook; cluster smoke зависит от локально установленных Helm/kind/k3d |
+| Область | Что можно показать на собеседовании |
+|---|---|
+| **Backend** | Go API gateway и domain-сервисы: каталог, корзина, заказы, доставка, аналитика и notifications. REST/OpenAPI, единый JSON-формат ошибок, readiness/health endpoints и structured logging. |
+| **Данные** | PostgreSQL для транзакций и миграций, Redis для кеша/резервов/координат/rate limiting, ClickHouse для продуктовой и логистической аналитики. |
+| **Распределённые процессы** | Kafka domain events, transactional outbox, идемпотентный checkout и consumers, bounded retry + DLQ для poison messages, eventual consistency при назначении курьера. |
+| **Логистика и ML** | Courier simulator, dispatcher с подбором курьера, жизненный цикл доставки, ETA baseline на FastAPI и накопление predicted/actual ETA. |
+| **Observability** | Prometheus, Grafana SLO/alerts, Jaeger + OpenTelemetry, correlation ID. Ожидаемый `404` до назначения доставки остаётся diagnostic signal, а не аварией. |
+| **Интерфейс и запуск** | Web UI с checkout, live tracking и analytics dashboard; Docker Compose, Helm chart, kind/k3d runbook, HPA для order-service. |
+| **Качество** | Unit/integration/smoke tests, CI, OpenAPI/Compose/Helm validation и короткий k6 checkout load scenario. |
+
+Команды проверки и запуска находятся ниже в README: проект можно поднять одной командой `docker compose up --build -d --wait`.
 
 ## Архитектура
 
@@ -215,7 +214,8 @@ ETA = travel_time(distance, stage)
 - Idempotency key хранится с hash запроса и готовым ответом в той же доменной транзакции.
 - Outbox relay использует `FOR UPDATE SKIP LOCKED`, retry с jitter и маркировку опубликованных записей.
 - Consumer сначала резервирует `event_id` в своей таблице `processed_events`, затем применяет бизнес-эффект в одной транзакции.
-- Poison messages после ограниченного числа попыток попадут в `.dlq` topic с причиной сбоя.
+- Poison messages проходят три попытки с exponential backoff и jitter, затем попадают в `<source-topic>.dlq` с причиной сбоя и исходным payload. Offset фиксируется только после успешного business effect или записи в DLQ.
+- `cmd/dlq-replay` сначала работает в dry-run режиме; для возврата bytes в исходный topic требует `--execute --confirm REPLAY`, сохраняет Kafka key и не удаляет audit trail из DLQ.
 - PostgreSQL и ClickHouse migrations запускаются отдельной командой/job, а не при конкурентном startup всех replicas.
 - `/healthz` проверяет процесс; `/readyz` — критичные зависимости с коротким timeout; `/metrics` отдаёт Prometheus metrics.
 - Graceful shutdown прекращает приём трафика, завершает активные запросы и фиксирует Kafka offsets после обработки.
@@ -307,6 +307,22 @@ docker compose down
 ```
 
 Compose запускает PostgreSQL и его migration job, Redis, Kafka в KRaft-режиме без ZooKeeper, ClickHouse и idempotent DDL job, Go-сервисы, FastAPI ETA service, Prometheus, Grafana, Jaeger, Swagger UI и nginx frontend. `kafka-init` создаёт четыре доменных topic. Web UI доступен на `http://localhost:8089`, gateway — на `http://localhost:8080`, ETA API — на `http://localhost:8090`, Swagger — на `http://localhost:8088`, ClickHouse HTTP — на `http://localhost:8123`, Grafana — на `http://localhost:3000`, Jaeger — на `http://localhost:16686`; `/readyz` проверяет инфраструктуру и readiness всех upstream-сервисов.
+
+### Разбор и replay DLQ
+
+После исправления причины poison message сначала посмотри записи без побочных эффектов:
+
+```powershell
+go run ./cmd/dlq-replay --topic freshflow.order.events.v1.dlq --limit 10
+```
+
+Только затем можно вернуть ограниченное число сообщений в их исходный topic:
+
+```powershell
+go run ./cmd/dlq-replay --topic freshflow.order.events.v1.dlq --limit 1 --execute --confirm REPLAY
+```
+
+Команда не удаляет запись из DLQ и не выводит payload в логи. Это осознанно: DLQ остаётся audit trail, а replay — at-least-once операция, которая безопасна только при исправленной причине и работающей consumer idempotency. Подробнее: [docs/events.md](docs/events.md#retry-and-dlq).
 
 ## CI и нагрузочный сценарий
 

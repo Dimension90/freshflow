@@ -127,7 +127,11 @@ services:
           freshflow.order.events.v1 \
           freshflow.inventory.events.v1 \
           freshflow.delivery.events.v1 \
-          freshflow.courier.location.v1; do
+          freshflow.courier.location.v1 \
+          freshflow.order.events.v1.dlq \
+          freshflow.inventory.events.v1.dlq \
+          freshflow.delivery.events.v1.dlq \
+          freshflow.courier.location.v1.dlq; do
           /opt/kafka/bin/kafka-topics.sh \
             --bootstrap-server kafka:29092 \
             --create --if-not-exists \

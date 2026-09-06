@@ -101,6 +101,18 @@ Payload: `delivery_id`, `order_id`, `courier_id`, `status`, `assigned_at`, `comp
 
 ## Retry and DLQ
 
-Consumer обрабатывает временные ошибки с bounded exponential backoff и jitter. После исчерпания попыток исходный envelope и sanitized error metadata публикуются в `<source-topic>.dlq`. Offset исходного сообщения фиксируется только после успешной обработки или успешной записи в DLQ.
+Consumer обрабатывает временные ошибки тремя попытками с bounded exponential backoff и jitter. После исчерпания попыток исходная запись (base64, чтобы сохранить и невалидный JSON) и sanitized error metadata публикуются в `<source-topic>.dlq`. Offset исходного сообщения фиксируется только после успешной обработки или успешной записи в DLQ. Метрики `freshflow_kafka_consumer_retries_total`, `freshflow_kafka_dead_lettered_total` и `freshflow_kafka_dlq_publish_failures_total` позволяют отличить временную деградацию от poison message.
 
-DLQ — диагностический механизм, а не автоматический источник повторной публикации. Возврат сообщений выполняется отдельной явной командой после устранения причины.
+DLQ — диагностический механизм, а не автоматический источник повторной публикации. Возврат сообщений выполняется только после устранения причины отдельным CLI `go run ./cmd/dlq-replay`. По умолчанию команда делает dry-run и не раскрывает исходный payload в логах:
+
+```powershell
+go run ./cmd/dlq-replay --topic freshflow.order.events.v1.dlq --limit 10
+```
+
+Для публикации обратно в исходный topic нужны оба явных флага:
+
+```powershell
+go run ./cmd/dlq-replay --topic freshflow.order.events.v1.dlq --limit 1 --execute --confirm REPLAY
+```
+
+Replay сохраняет Kafka key и исходные bytes, но не удаляет запись из DLQ: retention остаётся audit trail. Это at-least-once операция, поэтому запускать её можно лишь после исправления consumer-а; идемпотентность consumer-ов подавляет повторный business effect. Адрес брокеров берётся из `FRESHFLOW_KAFKA_BROKERS` (по умолчанию `localhost:9092`).
