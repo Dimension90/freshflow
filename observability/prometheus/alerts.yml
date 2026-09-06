@@ -1,21 +1,72 @@
 groups:
-  - name: freshflow
+  - name: freshflow-slo-recording
+    interval: 30s
     rules:
-      - alert: FreshFlowHighHTTPErrorRatio
-        expr: sum(rate(http_server_errors_total[5m])) / clamp_min(sum(rate(http_server_request_duration_seconds_count[5m])), 1) > 0.05
+      # Availability SLO uses gateway 5xx only. Delivery assignment is async,
+      # so an expected delivery-service 404 never burns the availability SLO.
+      - record: freshflow:gateway_http_5xx_error_ratio:rate5m
+        expr: |
+          (sum(rate(http_server_request_duration_seconds_count{service="api-gateway",status=~"5..",route!~"GET /(healthz|readyz)"}[5m])) or vector(0))
+          /
+          clamp_min((sum(rate(http_server_request_duration_seconds_count{service="api-gateway",route!~"GET /(healthz|readyz)"}[5m])) or vector(0)), 0.001)
+      - record: freshflow:gateway_http_p95_latency_seconds:rate5m
+        expr: |
+          histogram_quantile(0.95,
+            sum(rate(http_server_request_duration_seconds_bucket{service="api-gateway",route!~"GET /(healthz|readyz)"}[5m])) by (le)
+          )
+      - record: freshflow:analytics_worker_kafka_lag:max
+        expr: max(freshflow_kafka_consumer_lag{service="analytics-worker"})
+
+  - name: freshflow-operational-alerts
+    rules:
+      - alert: FreshFlowGateway5xxSLOBreach
+        expr: freshflow:gateway_http_5xx_error_ratio:rate5m > 0.02
+        for: 5m
+        labels: {severity: warning, service: api-gateway, slo: availability}
+        annotations:
+          summary: Gateway 5xx ratio is above the 2% availability SLO budget
+          runbook: Check api-gateway traces and downstream readiness; 4xx responses are excluded intentionally.
+      - alert: FreshFlowGatewayP95LatencyHigh
+        expr: freshflow:gateway_http_p95_latency_seconds:rate5m > 0.75
+        for: 10m
+        labels: {severity: warning, service: api-gateway, slo: latency}
+        annotations:
+          summary: Gateway p95 latency is above 750ms for 10 minutes
+          runbook: Use Jaeger to identify the slow downstream span and compare service-level p95 panels.
+      - alert: FreshFlowKafkaConsumerLag
+        expr: max(freshflow_kafka_consumer_lag) by (service, topic) > 100
         for: 5m
         labels: {severity: warning}
         annotations:
-          summary: FreshFlow HTTP error ratio is above 5%
-      - alert: FreshFlowKafkaConsumerLag
-        expr: max(freshflow_kafka_consumer_lag) by (service, topic) > 100
+          summary: Kafka consumer lag is above 100 records
+          runbook: Inspect the affected consumer logs, Kafka topic throughput, and downstream dependency health.
+      - alert: FreshFlowAnalyticsWorkerLag
+        expr: freshflow:analytics_worker_kafka_lag:max > 100
         for: 2m
-        labels: {severity: warning}
+        labels: {severity: warning, service: analytics-worker}
         annotations:
-          summary: Kafka consumer lag is growing
+          summary: Analytics worker is over 100 Kafka records behind
+          runbook: Check ClickHouse readiness and analytics-worker retry logs before scaling or restarting it.
+      - alert: FreshFlowAnalyticsProjectionDelay
+        expr: freshflow_analytics_projection_lag_seconds{service="analytics-worker"} > 60
+        for: 5m
+        labels: {severity: warning, service: analytics-worker}
+        annotations:
+          summary: Analytics projection is processing events older than 60 seconds
+          runbook: Correlate with analytics worker Kafka lag; do not alert on an idle system with no new event samples.
+      - alert: FreshFlowDeliveryOnTimeSLOBreach
+        expr: |
+          freshflow_delivery_completed_window{service="analytics-worker",window="24h"} >= 10
+          and on () freshflow_delivery_on_time_ratio{service="analytics-worker",window="24h"} < 0.90
+        for: 10m
+        labels: {severity: warning, service: delivery-service, slo: on-time-delivery}
+        annotations:
+          summary: On-time delivery ratio is below 90% over the last 24 hours
+          runbook: Inspect ETA accuracy, courier availability, district load, and delivery phase duration analytics.
       - alert: FreshFlowETAServiceDown
         expr: up{job="freshflow-eta"} == 0
         for: 1m
-        labels: {severity: critical}
+        labels: {severity: critical, service: eta-service}
         annotations:
           summary: ETA service cannot be scraped
+          runbook: Check eta-service logs and delivery-service readiness.

@@ -1,0 +1,261 @@
+apiVersion: 1
+
+# Keep local alerting observable without requiring SMTP, Slack, or another
+# external account. Rules still evaluate and show their state in Grafana.
+muteTimes:
+  - orgId: 1
+    name: freshflow-local-no-notifications
+    time_intervals:
+      - times:
+          - start_time: "00:00"
+            end_time: "24:00"
+
+policies:
+  - orgId: 1
+    receiver: grafana-default-email
+    routes:
+      - receiver: grafana-default-email
+        object_matchers:
+          - [source, "=", freshflow-local]
+        mute_time_intervals:
+          - freshflow-local-no-notifications
+
+# Grafana-managed alerts are provisioned from the repository and visible in
+# Alerting -> Alert rules. There is intentionally no external contact point in
+# this local project: alerts are for dashboard-based incident practice.
+groups:
+  - orgId: 1
+    name: FreshFlow SLO
+    folder: FreshFlow
+    interval: 1m
+    rules:
+      - uid: freshflow_gateway_5xx_slo
+        title: FreshFlow gateway 5xx SLO breach
+        condition: B
+        data:
+          - refId: A
+            relativeTimeRange: {from: 300, to: 0}
+            datasourceUid: prometheus
+            model:
+              editorMode: code
+              expr: freshflow:gateway_http_5xx_error_ratio:rate5m
+              instant: true
+              intervalMs: 1000
+              maxDataPoints: 43200
+              range: false
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator: {params: [0.02], type: gt}
+                  operator: {type: and}
+                  query: {params: [A]}
+                  reducer: {params: [], type: last}
+                  type: query
+              datasource: {type: __expr__, uid: __expr__}
+              expression: A
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: B
+              type: threshold
+        dashboardUid: freshflow-overview
+        panelId: 3
+        noDataState: NoData
+        execErrState: Error
+        for: 5m
+        annotations:
+          summary: Gateway 5xx ratio exceeds 2%; expected delivery-assignment 404s are excluded.
+        labels: {severity: warning, service: api-gateway, slo: availability, source: freshflow-local}
+      - uid: freshflow_gateway_p95_latency
+        title: FreshFlow gateway p95 latency high
+        condition: B
+        data:
+          - refId: A
+            relativeTimeRange: {from: 300, to: 0}
+            datasourceUid: prometheus
+            model:
+              editorMode: code
+              expr: freshflow:gateway_http_p95_latency_seconds:rate5m
+              instant: true
+              intervalMs: 1000
+              maxDataPoints: 43200
+              range: false
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator: {params: [0.75], type: gt}
+                  operator: {type: and}
+                  query: {params: [A]}
+                  reducer: {params: [], type: last}
+                  type: query
+              datasource: {type: __expr__, uid: __expr__}
+              expression: A
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: B
+              type: threshold
+        dashboardUid: freshflow-overview
+        panelId: 2
+        noDataState: NoData
+        execErrState: Error
+        for: 10m
+        annotations:
+          summary: Gateway p95 latency exceeds 750ms for 10 minutes.
+        labels: {severity: warning, service: api-gateway, slo: latency, source: freshflow-local}
+      - uid: freshflow_analytics_kafka_lag
+        title: FreshFlow analytics worker Kafka lag
+        condition: B
+        data:
+          - refId: A
+            relativeTimeRange: {from: 300, to: 0}
+            datasourceUid: prometheus
+            model:
+              editorMode: code
+              expr: freshflow:analytics_worker_kafka_lag:max
+              instant: true
+              intervalMs: 1000
+              maxDataPoints: 43200
+              range: false
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator: {params: [100], type: gt}
+                  operator: {type: and}
+                  query: {params: [A]}
+                  reducer: {params: [], type: last}
+                  type: query
+              datasource: {type: __expr__, uid: __expr__}
+              expression: A
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: B
+              type: threshold
+        dashboardUid: freshflow-overview
+        panelId: 9
+        noDataState: NoData
+        execErrState: Error
+        for: 2m
+        annotations:
+          summary: Analytics worker is over 100 Kafka records behind.
+        labels: {severity: warning, service: analytics-worker, source: freshflow-local}
+      - uid: freshflow_kafka_consumer_lag
+        title: FreshFlow Kafka consumer lag
+        condition: B
+        data:
+          - refId: A
+            relativeTimeRange: {from: 300, to: 0}
+            datasourceUid: prometheus
+            model:
+              editorMode: code
+              expr: max(freshflow_kafka_consumer_lag)
+              instant: true
+              intervalMs: 1000
+              maxDataPoints: 43200
+              range: false
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator: {params: [100], type: gt}
+                  operator: {type: and}
+                  query: {params: [A]}
+                  reducer: {params: [], type: last}
+                  type: query
+              datasource: {type: __expr__, uid: __expr__}
+              expression: A
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: B
+              type: threshold
+        dashboardUid: freshflow-overview
+        panelId: 5
+        noDataState: NoData
+        execErrState: Error
+        for: 5m
+        annotations:
+          summary: A Kafka consumer is over 100 records behind.
+        labels: {severity: warning, slo: event-processing, source: freshflow-local}
+      - uid: freshflow_analytics_projection_delay
+        title: FreshFlow analytics projection delay
+        condition: B
+        data:
+          - refId: A
+            relativeTimeRange: {from: 300, to: 0}
+            datasourceUid: prometheus
+            model:
+              editorMode: code
+              expr: freshflow_analytics_projection_lag_seconds{service="analytics-worker"}
+              instant: true
+              intervalMs: 1000
+              maxDataPoints: 43200
+              range: false
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator: {params: [60], type: gt}
+                  operator: {type: and}
+                  query: {params: [A]}
+                  reducer: {params: [], type: last}
+                  type: query
+              datasource: {type: __expr__, uid: __expr__}
+              expression: A
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: B
+              type: threshold
+        dashboardUid: freshflow-overview
+        panelId: 10
+        noDataState: NoData
+        execErrState: Error
+        for: 5m
+        annotations:
+          summary: Analytics is projecting events older than 60 seconds.
+        labels: {severity: warning, service: analytics-worker, slo: analytics-freshness, source: freshflow-local}
+      - uid: freshflow_delivery_on_time_slo
+        title: FreshFlow on-time delivery SLO breach
+        condition: B
+        data:
+          - refId: A
+            relativeTimeRange: {from: 300, to: 0}
+            datasourceUid: prometheus
+            model:
+              editorMode: code
+              expr: |
+                freshflow_delivery_completed_window{service="analytics-worker",window="24h"} >= 10
+                and on () freshflow_delivery_on_time_ratio{service="analytics-worker",window="24h"} < 0.90
+              instant: true
+              intervalMs: 1000
+              maxDataPoints: 43200
+              range: false
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator: {params: [0], type: gt}
+                  operator: {type: and}
+                  query: {params: [A]}
+                  reducer: {params: [], type: last}
+                  type: query
+              datasource: {type: __expr__, uid: __expr__}
+              expression: A
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: B
+              type: threshold
+        dashboardUid: freshflow-overview
+        panelId: 7
+        noDataState: NoData
+        execErrState: Error
+        for: 10m
+        annotations:
+          summary: On-time delivery ratio is below 90% over the last 24 hours.
+        labels: {severity: warning, service: delivery-service, slo: on-time-delivery, source: freshflow-local}

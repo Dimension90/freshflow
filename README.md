@@ -235,7 +235,7 @@ ETA = travel_time(distance, stage)
 
 OpenTelemetry создаёт server/client spans, передаёт W3C `traceparent` по HTTP и сохраняет `trace_id`/`span_id` в event envelope. Kafka consumer продолжает trace от originating span; delivery хранит исходный context, чтобы stage recovery и ETA HTTP-вызов оставались в trace оформления заказа. Локально spans отправляются OTLP/gRPC напрямую в Jaeger. Correlation ID удобен для пользовательского поиска, trace ID — для причинно-следственного пути. В метриках нет `order_id`, `user_id` и других high-cardinality labels.
 
-Provisioned Grafana dashboard содержит request rate, p95 latency, error rate, число созданных заказов, Kafka lag и p95 ETA prediction duration. Prometheus также загружает alerts для высокого error ratio, consumer lag и недоступного ETA target.
+Provisioned Grafana dashboard содержит request rate, gateway p95, **5xx-only** availability SLO, число созданных заказов, Kafka lag, ETA p95, on-time delivery ratio и freshness analytics-проекции. Prometheus recording rules и Grafana-managed alerts описаны в [operations guide](docs/operations.md): ожидаемый `404` поиска ещё не назначенной доставки остаётся diagnostic signal, но не расходует availability SLO и не вызывает alert.
 
 ## Web UI
 

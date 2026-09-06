@@ -1,3 +1,3 @@
 # Grafana
 
-Datasource и dashboard provisioned из репозитория. После `docker compose up` dashboard **FreshFlow Overview** доступен на `http://localhost:3000` (`admin` / `freshflow`, только локальные demo credentials).
+Datasource, dashboard и Grafana-managed alert rules provisioned из репозитория. После `docker compose up` dashboard **FreshFlow Overview** доступен на `http://localhost:3000` (`admin` / `freshflow`, только локальные demo credentials). В **Alerting → Alert rules** появится группа **FreshFlow SLO**: gateway 5xx, p95, общий Kafka lag, lag/freshness analytics-worker и on-time delivery. Последний учитывается только при не менее чем 10 завершённых доставках за 24 часа. Правила помечены `source=freshflow-local` и попадают в постоянный local mute: они видны и оцениваются в Grafana, но не требуют SMTP, Slack или другого внешнего contact point.

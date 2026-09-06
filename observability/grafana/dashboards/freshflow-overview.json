@@ -15,13 +15,14 @@
       "type": "timeseries", "title": "HTTP p95 latency", "id": 2,
       "datasource": {"type": "prometheus", "uid": "prometheus"},
       "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []},
-      "targets": [{"expr": "histogram_quantile(0.95, sum(rate(http_server_request_duration_seconds_bucket[5m])) by (le, service))", "legendFormat": "{{service}}", "refId": "A"}],
+      "targets": [{"expr": "freshflow:gateway_http_p95_latency_seconds:rate5m", "legendFormat": "api-gateway SLO", "refId": "A"}],
       "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0}
     },
     {
-      "type": "timeseries", "title": "HTTP errors / sec", "id": 3,
+      "type": "timeseries", "title": "Gateway 5xx error ratio (availability SLO)", "id": 3,
       "datasource": {"type": "prometheus", "uid": "prometheus"},
-      "targets": [{"expr": "sum(rate(http_server_errors_total[5m])) by (service)", "legendFormat": "{{service}}", "refId": "A"}],
+      "fieldConfig": {"defaults": {"unit": "percentunit", "min": 0, "max": 1}, "overrides": []},
+      "targets": [{"expr": "freshflow:gateway_http_5xx_error_ratio:rate5m", "legendFormat": "5xx only", "refId": "A"}],
       "gridPos": {"h": 8, "w": 8, "x": 0, "y": 8}
     },
     {
@@ -42,6 +43,39 @@
       "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []},
       "targets": [{"expr": "histogram_quantile(0.95, sum(rate(freshflow_eta_prediction_duration_seconds_bucket[5m])) by (le, caller))", "legendFormat": "{{caller}}", "refId": "A"}],
       "gridPos": {"h": 8, "w": 6, "x": 18, "y": 8}
+    },
+    {
+      "type": "stat", "title": "On-time delivery SLO (24h)", "id": 7,
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "percentunit", "min": 0, "max": 1, "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "orange", "value": 0.9}, {"color": "green", "value": 0.95}]}}, "overrides": []},
+      "targets": [{"expr": "freshflow_delivery_on_time_ratio{service=\"analytics-worker\",window=\"24h\"}", "refId": "A"}],
+      "gridPos": {"h": 8, "w": 6, "x": 0, "y": 16}
+    },
+    {
+      "type": "stat", "title": "Completed deliveries in SLO sample", "id": 8,
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"expr": "freshflow_delivery_completed_window{service=\"analytics-worker\",window=\"24h\"}", "refId": "A"}],
+      "gridPos": {"h": 8, "w": 6, "x": 6, "y": 16}
+    },
+    {
+      "type": "timeseries", "title": "Analytics worker Kafka backlog", "id": 9,
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"expr": "freshflow:analytics_worker_kafka_lag:max", "legendFormat": "records behind", "refId": "A"}],
+      "gridPos": {"h": 8, "w": 6, "x": 12, "y": 16}
+    },
+    {
+      "type": "timeseries", "title": "Analytics projection event age", "id": 10,
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []},
+      "targets": [{"expr": "freshflow_analytics_projection_lag_seconds{service=\"analytics-worker\"}", "legendFormat": "event age at projection", "refId": "A"}],
+      "gridPos": {"h": 8, "w": 6, "x": 18, "y": 16}
+    },
+    {
+      "type": "timeseries", "title": "Expected 404: delivery not assigned (diagnostic only)", "id": 11,
+      "description": "This is expected while asynchronous delivery assignment is in progress. It is deliberately excluded from the gateway 5xx SLO and alerts.",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"expr": "sum(rate(http_server_request_duration_seconds_count{service=\"delivery-service\",route=\"GET /internal/v1/deliveries/order/{orderID}\",status=\"404\"}[5m]))", "legendFormat": "expected delivery lookup 404/s", "refId": "A"}],
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 24}
     }
   ],
   "refresh": "5s",

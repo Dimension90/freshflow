@@ -53,6 +53,7 @@ func main() {
 	consumerCtx, cancelConsumer := context.WithCancel(context.Background())
 	defer cancelConsumer()
 	go analytics.NewConsumer(store, kafkaClient, logger).Run(consumerCtx)
+	go analytics.NewSLOReporter(store, logger, 30*time.Second).Run(consumerCtx)
 
 	mux := http.NewServeMux()
 	analytics.NewHandler(store, logger).Register(mux)

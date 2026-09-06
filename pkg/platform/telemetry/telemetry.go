@@ -40,6 +40,15 @@ var (
 		Name: "freshflow_eta_prediction_duration_seconds", Help: "ETA prediction request duration.",
 		Buckets: prometheus.DefBuckets,
 	}, []string{"caller", "status"})
+	analyticsProjectionLag = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "freshflow_analytics_projection_lag_seconds", Help: "Age of an event when analytics-worker successfully projected it.",
+	}, []string{"service"})
+	deliveryOnTimeRatio = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "freshflow_delivery_on_time_ratio", Help: "Ratio of completed deliveries whose actual ETA did not exceed the prediction.",
+	}, []string{"service", "window"})
+	deliveryCompletedWindow = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "freshflow_delivery_completed_window", Help: "Completed deliveries included in the delivery SLO window.",
+	}, []string{"service", "window"})
 
 	initOnce sync.Once
 	initErr  error
@@ -47,7 +56,8 @@ var (
 )
 
 func init() {
-	prometheus.MustRegister(httpDuration, httpErrors, ordersCreated, kafkaLag, etaDuration)
+	prometheus.MustRegister(httpDuration, httpErrors, ordersCreated, kafkaLag, etaDuration,
+		analyticsProjectionLag, deliveryOnTimeRatio, deliveryCompletedWindow)
 }
 
 func Init(ctx context.Context, service, environment string, logger *slog.Logger) error {
@@ -118,6 +128,20 @@ func ObserveKafkaFetches(service string, fetches kgo.Fetches) {
 
 func ObserveETAPrediction(caller, status string, duration time.Duration) {
 	etaDuration.WithLabelValues(caller, status).Observe(duration.Seconds())
+}
+
+func ObserveAnalyticsProjectionLag(service string, duration time.Duration) {
+	if duration < 0 {
+		duration = 0
+	}
+	analyticsProjectionLag.WithLabelValues(service).Set(duration.Seconds())
+}
+
+func ObserveDeliveryOnTimeRatio(service, window string, ratio *float64, completed uint64) {
+	deliveryCompletedWindow.WithLabelValues(service, window).Set(float64(completed))
+	if ratio != nil {
+		deliveryOnTimeRatio.WithLabelValues(service, window).Set(*ratio)
+	}
 }
 
 func StartConsumerSpan(ctx context.Context, service, eventType, traceID, spanID string) (context.Context, trace.Span) {

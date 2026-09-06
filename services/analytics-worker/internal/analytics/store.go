@@ -93,6 +93,26 @@ func (s *Store) OnTimeRatio(ctx context.Context) (*float64, error) {
 	return result, err
 }
 
+// DeliverySLO returns a 24-hour on-time ratio and its sample size. A missing
+// ratio means there were no completed deliveries in the window, not an error.
+func (s *Store) DeliverySLO(ctx context.Context) (*float64, uint64, error) {
+	var completed, onTime uint64
+	err := s.clickhouse.QueryRow(ctx, `
+		SELECT
+			countIf(event_type = 'delivery.completed' AND predicted_eta_seconds IS NOT NULL AND actual_eta_seconds IS NOT NULL),
+			countIf(event_type = 'delivery.completed' AND predicted_eta_seconds IS NOT NULL AND actual_eta_seconds IS NOT NULL AND actual_eta_seconds <= predicted_eta_seconds)
+		FROM order_analytics FINAL
+		WHERE occurred_at >= now() - INTERVAL 24 HOUR`).Scan(&completed, &onTime)
+	if err != nil {
+		return nil, 0, err
+	}
+	if completed == 0 {
+		return nil, 0, nil
+	}
+	ratio := float64(onTime) / float64(completed)
+	return &ratio, completed, nil
+}
+
 func (s *Store) Cancellations(ctx context.Context) (uint64, error) {
 	var result uint64
 	err := s.clickhouse.QueryRow(ctx, `

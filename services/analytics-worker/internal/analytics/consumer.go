@@ -64,6 +64,9 @@ func (c *Consumer) handle(ctx context.Context, value []byte) error {
 	if err := json.Unmarshal(value, &envelope); err != nil {
 		return fmt.Errorf("decode event envelope: %w", err)
 	}
+	if envelope.OccurredAt.IsZero() {
+		envelope.OccurredAt = time.Now().UTC()
+	}
 	ctx = httpx.WithCorrelationID(ctx, envelope.CorrelationID)
 	ctx, span := telemetry.StartConsumerSpan(ctx, "analytics-worker", envelope.EventType, envelope.TraceID, envelope.SpanID)
 	defer span.End()
@@ -77,6 +80,7 @@ func (c *Consumer) handle(ctx context.Context, value []byte) error {
 	if err := c.store.Insert(ctx, projection); err != nil {
 		return err
 	}
+	telemetry.ObserveAnalyticsProjectionLag("analytics-worker", time.Since(envelope.OccurredAt))
 	c.logger.Info("analytics event projected", "event_id", envelope.EventID,
 		"event_type", envelope.EventType, "correlation_id", envelope.CorrelationID, "trace_id", envelope.TraceID)
 	return nil
